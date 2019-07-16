@@ -1,0 +1,1056 @@
+:opencf: link:https://labs.opentlc.com/[OPENTLC lab portal^]
+:account_management: link:https://www.opentlc.com/account/[OPENTLC Account Management page^]
+:quay_hostname: quay.multicloud.rhte.opentlc.com
+:lb_base: mcloud.rhte.opentlc.com 
+:cluster1_base: cloud1.rhte.opentlc.com
+:cluster2_base: cloud2.rhte.opentlc.com
+:cluster1_master: master.{cluster1_base}
+:cluster2_master: master.{cluster2_base}
+:oc_version: 3.10.34
+:oc_download_location: https://mirror.openshift.com/pub/openshift-v3/clients/{oc_version}
+
+= Multi Cloud OpenShift CI/CD Lab
+
+== Lab Overview
+
+In this lab you are deploying an application to two separate OpenShift Clusters. You will complete the following tasks:
+
+* Register for a user ID for a *Quay Enterprise* server. Quay is used as an external container image registry.
+* Deploy a Jenkins server into the first OpenShift Cluster. In order to keep the system requirements relatively low our first OpenShift cluster will also act as the build environment for the application. In the real world this might be yet another OpenShift cluster that is dedicated for development teams.
+* In the first OpenShift Cluster set up a Development Project and a Production Project.
+* In the second OpenShift Cluster set up a Production project.
+* Create a Jenkins Pipeline that
+** builds a container image in the development project
+* Test the Jenkins Pipeline
+* Enhance and test the Jenkins Pipeline step by step to
+** Push the container image to the Quay registry
+** Pull the image from Quay to the production project on both clusters
+** Deploy the image to both cluster 1 and cluster 2 production projects
+* Test your application from a web browser
+* Test your application from the command line (to bypass session cookies)
+
+== Lab Setup
+
+=== Request your Lab Number from the GUID Grabber
+
+Before you begin this lab you need to request a *lab number* from the  https://www.opentlc.com/gg/gg.cgi?profile=rhtemgr[GUID grabber].
+
+This is lab *A1006 - Multi Cloud Deployment* and the *Activation Code* is *multi*.
+
+Once you have a *lab number* your *OpenShift username* will be *user* followed by the *lab number*.
+
+[NOTE]
+_Example:_ If your *lab number* is *61* then your *username* is *user61*. The password for all OpenShift users is *r3dh4t1!*
+
+Because this lab runs on two shared clusters and a Quay instance you will also use your *username* to name and identify your projects in Openshift and your account in Quay.
+
+=== Connect to your Client VM
+
+In this lab, you use the command line for some of the tasks. The lab provides a Virtual Machine that is already pre-configured with the correct version of the OpenShift Command Line Utility, `oc`.
+
+. To connect to the Client VM you need your *lab number*. The command to connect to the Client VM is
++
+[source,sh]
+----
+ssh lab-user@clientvm<lab number>.f0f4.rhte.opentlc.com
+----
++
+where *<lab number>* is your lab number (without leading zeros) using password *r3dh4t1!*
++
+[TIP]
+If your *lab number* is *61* then the command to run would be `ssh lab-user@clientvm61.f0f4.rhte.opentlc.com`.
++
+. Once you are logged into the Client VM set up an environment variable with your project prefix (in the example below `<username>`). *Make sure to replace `<username>` with your username*.
++
+[TIP]
+Remember that your *<username>* is *user* followed by your *lab number* (e.g. `user61`).
++
+[source,sh]
+----
+export GUID=<username>
+echo "export GUID=$GUID" >> ~/.bashrc
+echo $GUID
+----
+
+== Set up your Quay User ID
+
+In this section you will create a user ID for the shared Quay Enterprise server and create a repository for your container images.
+
+. In your web browser navigate to the Quay Enterprise server at https://{quay_hostname}
+* You may need to accept an insecure certificate.
+. Click the *Create Account* link
+* Use your *assigned OpenShift username* (e.g. `user198`) as the Username
+* Use any valid e-mail address
+* Use any password (make sure you remember it!)
+* Click *Create Account*
+
+. After you have been logged in click the *+ Create New Repository* link on the top right of your screen
+* Use *rhte-app* for the `Repository Name`
+* Make sure that *Private* remains checked
+* Click *Create Private Repository*
+. Your private repository is now _{quay_hostname}/<username>/rhte-app_.
+
+=== Set up a Quay Robot Account
+
+It is generally not a good idea to use your credentials in pipelines you will now set up a Robot Account in Quay. Robot Accounts are used to access quay with specific, restrictive permissions. This ensures that the original user account will not be compromised should a robot account get compromised. Robot Accounts are easily created, updated and deleted when necessary.
+
+. Log back into Quay if you had logged out before.
+. In the top right corner Click on the *+* icon and then select *New Robot Account*.
++
+[TIP]
+If you do not see the *+* Icon in the top right corner your browser window may be too narrow. Simply resize the width of your browser window.
++
+. In the *Create Robot Account* panel use `jenkins` as the name for the robot account. Feel free to add a description as well. Then click *Create Robot Account*. The full name of the Robot Account will be the combination of your username and the robot account name - e.g. `user198+jenkins`.
+. On the *Permissions* panel select the checkbox next to your *rhte-app* repository. You will use this account to both write images to Quay and read images from Quay. Therefore make sure that *Write* is selected under the *Permission* check box. Then click *Add permissions*.
+. Now click on the *Robot Account Name* (it should be your username followed by `+jenkins`, e.g. `user198+jenkins`).
+. Click on *Robot Token* and then copy the token and save it somewhere (e.g. a text file). You will need this token later in this lab when configuring Jenkins.
+. Close the *Credentials* window by clicking the little `x` in the top right corner.
+. Log out of Quay by clicking on your user name in the top right corner and selecting *Sign out all sessions*.
+
+Your Quay account and Quay Robot Account are now configured to be used in the deployment pipeline.
+
+== Create a Jenkins instance in OpenShift Cluster 1
+
+In this section you are creating a Jenkins Instance in the first OpenShift cluster. You will be using this Jenkins Instance to build and deploy your application. Note that you will only create one Jenkins instance. In the real world this might be on dedicated development cluster - or even outside of any OpenShift Cluster. OpenShift offers the deployment options that will fit your customer's needs.
+
+. From your Client VM log into the OpenShift Cluster 1 (use https://{cluster1_master} as `<CLUSTER_URL>`).
++
+[source,sh]
+----
+oc login -u <username> -p <password> <CLUSTER_URL>
+----
++
+. Create a project for Jenkins
++
+[NOTE]
+Because you are using a shared cluster all project names need to be unique. Using your assigned username should guarantee that your project names are unique to the cluster.
++
+[source,sh]
+----
+oc new-project ${GUID}-jenkins --display-name "Jenkins for <Firstname> <Lastname>"
+----
++
+. Create your Jenkins Instance and assign sufficient resources for this instance. It is a good idea to copy and paste this entire block at once - this ensures that the configuration changes are applied immediately.
++
+[source,sh]
+----
+oc new-app jenkins-persistent --param ENABLE_OAUTH=true --param MEMORY_LIMIT=2Gi --param VOLUME_CAPACITY=1Gi --param DISABLE_ADMINISTRATIVE_MONITORS=true -n ${GUID}-jenkins
+oc set resources dc jenkins --limits=memory=2Gi,cpu=2 --requests=memory=1Gi,cpu=500m -n ${GUID}-jenkins
+----
++
+. You will be building a (very) simple Node.JS application. OpenShift comes with a pre-configured Node.JS slave pod for Jenkins to use. However you will be moving images between various container registries using *skopeo* - which is not included in the stock slave pod. Therefore you will need to build your own custom slave pod based on the stock Node.JS pod to include skopeo.
++
+You can use OpenShift to build this custom slave pod by executing a simple Docker build. Create a Build Configuration to build a custom NodeJS Slave Pod that includes *skopeo*. The container image for this new slave pod will live in your Jenkins project as *jenkins-slave-nodejs-skopeo*. This build will automatically start and succeed after a few seconds.
++
+[source,sh]
+----
+oc new-build -D $'FROM docker.io/openshift/jenkins-slave-nodejs-centos7:v3.10\nUSER root\nRUN yum -y install skopeo && yum clean all\nUSER 1001' --name=jenkins-slave-nodejs-skopeo --to=jenkins-slave-nodejs-skopeo:v3.10 -n ${GUID}-jenkins
+----
+
+== Create projects in OpenShift Cluster 1
+
+In this section you are creating a development project in the first OpenShift Cluster and a production project in both the first and second OpenShift Cluster. Again in the real world you would most likely have three clusters, one for development and two separate production clusters. For simplicity you are using the first production cluster to also build your application.
+
+One important part of setting up the OpenShift projects is to grant the correct permissions to Jenkins to build and deploy the application.
+
+. Make sure to be still logged into OpenShift Cluster 1 (https://{cluster1_master})
++
+[source,sh]
+----
+oc login -u <username> <CLUSTER_URL>
+----
+
+. Create the development project
++
+[source,sh]
+----
+oc new-project ${GUID}-rhte-app-dev --display-name "RHTE Application (Development)"
+----
++
+. Grant the correct permissions to Jenkins - the *jenkins* service account needs *edit* permissions to manipulate the projects.
++
+[source,sh]
+----
+oc policy add-role-to-user edit system:serviceaccount:${GUID}-jenkins:jenkins -n ${GUID}-rhte-app-dev
+----
++
+. Because the Jenkins Node.JS Slave pod will be building our application you will need to set up a binary build configuration in your development project. Jenkins will simply "stream" the built artifacts into this build configuration to create the runtime container image.
++
+[source,sh]
+----
+oc new-build --binary=true --name="rhte-app" nodejs:8 -n ${GUID}-rhte-app-dev
+----
+
+. Create the production project
++
+[source,sh]
+----
+oc new-project ${GUID}-rhte-app --display-name "RHTE Application"
+----
++
+. Again grant the correct permissions to Jenkins
++
+[source,sh]
+----
+oc policy add-role-to-user edit system:serviceaccount:${GUID}-jenkins:jenkins -n ${GUID}-rhte-app
+----
+
+. Create the production deployment config and set it up for deployment from Jenkins. Note the following:
+* You are using *nodejs:0.0* as the image to be deployed - this image does not exist. Therefore you need to specify the *--allow-missing-imagestream-tags=true* parameter. The pipeline will later build the image, make it available to this project and then update the deployment configuration with the correct image.
+* You are turning off all triggers for the deployment configuration - both image change and config triggers. This allows the Jenkins Pipeline to fully control the deployment of the application.
+* You are setting two environment variables for the deployment config: *CLUSTER_NAME* and *PREFIX*. The Node.JS application expects these variable to be set to display which cluster it is running on.
+* Since there is no container image to introspect for OpenShift you have to manually create the service for the application. The Node.JS application listens on port 3000 - therefore create a service to point to port 3000.
++
+[source,sh]
+----
+oc new-app openshift/nodejs:0.0 --name=rhte-app --allow-missing-imagestream-tags=true -n ${GUID}-rhte-app
+oc set triggers dc/rhte-app --remove-all -n ${GUID}-rhte-app
+oc set env dc/rhte-app CLUSTER_NAME="Cluster 1" -n ${GUID}-rhte-app
+oc set env dc/rhte-app PREFIX="${GUID}" -n ${GUID}-rhte-app
+oc expose dc rhte-app --port 3000 -n ${GUID}-rhte-app
+----
++
+. To make the application available from outside the OpenShift cluster you need to expose the service as a route. But since you are deploying the application to two clusters there is also a load balancer in play - which means that you need to create a second route for the load balancer URL.
++
+The first is the standard route so that you can verify on cluster 1 that your application is working. The second route listens to forward requests from the load balancer in front of our two clusters. The load balancer is listening on *apps.{lb_base}* and forwards requests in a round-robin fashion to both clusters. In order for the OpenShift router to know which application to route requests to *apps.{lb_base}* to it needs to have a route registered for this URL.
++
+[source,sh]
+----
+oc expose svc/rhte-app --name rhte-app -n ${GUID}-rhte-app
+oc expose svc/rhte-app --name rhte-app-lb --hostname=${GUID}.apps.mcloud.rhte.opentlc.com -n ${GUID}-rhte-app
+----
++
+. Create a service account for Jenkins to use to manipulate images and deployment configurations in this project.
++
+[source,sh]
+----
+oc create sa jenkinsaccess -n ${GUID}-rhte-app
+----
++
+. Jenkins needs permission to copy the image to the production project as well as manipulate deployments. Therefore assign the `edit` role to this new service account.
++
+[source,sh]
+----
+oc policy add-role-to-user edit system:serviceaccount:${GUID}-rhte-app:jenkinsaccess -n ${GUID}-rhte-app
+----
++
+. Retrieve the token for the *jenkinsaccess* service account. You will use this token to push the image from Quay into the production project from the Jenkins Pipeline as well as deploying the application.
++
+[source,sh]
+----
+oc serviceaccounts get-token jenkinsaccess -n ${GUID}-rhte-app
+----
++
+.Sample Output
+[source,texinfo]
+----
+eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3BhY2UiOiJ4eXotcmh0ZS1hcHAiLCJrdWJlcm5ldGVzLmlvL3NlcnZpY2VhY2NvdW50L3NlY3JldC5uYW1lIjoiamVua2luc2FjY2Vzcy10b2tlbi1zeGJtMiIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VydmljZS1hY2NvdW50Lm5hbWUiOiJqZW5raW5zYWNjZXNzIiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9zZXJ2aWNlLWFjY291bnQudWlkIjoiYTk0M2Q0MDktODU1MS0xMWU4LThiZmEtMGFiOWNlM2Q5ZGI4Iiwic3ViIjoic3lzdGVtOnNlcnZpY2VhY2NvdW50Onh5ei1yaHRlLWFwcDpqZW5raW5zYWNjZXNzIn0.hiwvcZqw__4Mw_gNRdoY63qaW8jvPqD-7_M0bxd98h8qSvYO4IEwBlJNLabR3SsQlKEB9m4-B2OsA_e5P_UwfTil4E23zOcaUXTTwjV06RuaxHvI0v3POb_4_hWql_JmDr0QlyWBuFMtFBNvhto32y0Yeyn5E8boh8u33RfmR_p5Kq029UXtBZAAp-7iHWiszK7NUOZ4PpzV7NXJCj9Toj8_4oNSzAuo7Uqv5q_KX-IyzPwuFU-krG9V4tkmM9QaeAZxmpck-tCSQztm5H7ssdrf8k_ImHG2OsKJMVgY3vPEZROv1JXyY01xxUsB03Rti9wSUnscJgM7jaZ6q-qwjA
+----
++
+. Save this token somewhere (like a temporary text file). You will need it when setting up the pipeline.
+
+== Create projects in OpenShift Cluster 2
+
+In the second OpenShift Cluster you will create just a Production project. In the Jenkins Pipeline you will be copying the container image from your development project in the first cluster to Quay and then from Quay to the production projects in your two clusters. This guarantees that both clusters are using the same container image.
+
+. Log into the second OpenShift Cluster (https://{cluster2_master})
++
+[source,sh]
+----
+oc login -u <username> <CLUSTER_URL>
+----
++
+. Create the production project
++
+[source,sh]
+----
+oc new-project ${GUID}-rhte-app --display-name "RHTE Application"
+----
++
+. Just like in the first cluster create the production deployment config and set it up for deployment from Jenkins
++
+[source,sh]
+----
+oc new-app openshift/nodejs:0.0 --name=rhte-app --allow-missing-imagestream-tags=true -n ${GUID}-rhte-app
+oc set triggers dc/rhte-app --remove-all -n ${GUID}-rhte-app
+oc set env dc/rhte-app CLUSTER_NAME="Cluster 2" -n ${GUID}-rhte-app
+oc set env dc/rhte-app PREFIX="${GUID}" -n ${GUID}-rhte-app
+oc expose dc rhte-app --port 3000 -n ${GUID}-rhte-app
+----
++
+. Again create two routes for the application. The first is the standard route so that you can verify on cluster 2 that your application is working. The second route listens to forward requests from the load balancer in front of our two clusters.
++
+[source,sh]
+----
+oc expose svc/rhte-app --name rhte-app -n ${GUID}-rhte-app
+oc expose svc/rhte-app --name rhte-app-lb --hostname=${GUID}.apps.mcloud.rhte.opentlc.com -n ${GUID}-rhte-app
+----
++
+Both production projects have a route with hostname *${GUID}.apps.{lb_base}*. This enables the external loadbalancer that is receiving traffic at that URL to forward requests to either cluster. And the router on each cluster then knows which application to route the request to.
++
+. Create a service account for Jenkins to use to manipulate images and deployment configurations in this project.
++
+[source,sh]
+----
+oc create sa jenkinsaccess -n ${GUID}-rhte-app
+----
++
+. Jenkins needs permission to copy the image to the production project as well as manipulate deployments. Therefore assign the `edit` role to this new service account.
++
+[source,sh]
+----
+oc policy add-role-to-user edit system:serviceaccount:${GUID}-rhte-app:jenkinsaccess -n ${GUID}-rhte-app
+----
++
+. Retrieve the token for the *jenkinsaccess* service account. You will use this token to push the image from Quay into the production project from the Jenkins Pipeline.
++
+[source,sh]
+----
+oc serviceaccounts get-token jenkinsaccess -n ${GUID}-rhte-app
+----
++
+.Sample Output
+[source,texinfo]
+----
+eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3BhY2UiOiJ4eXotcmh0ZS1hcHAiLCJrdWJlcm5ldGVzLmlvL3NlcnZpY2VhY2NvdW50L3NlY3JldC5uYW1lIjoiamVua2luc2FjY2Vzcy10b2tlbi1kNHh4ZiIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VydmljZS1hY2NvdW50Lm5hbWUiOiJqZW5raW5zYWNjZXNzIiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9zZXJ2aWNlLWFjY291bnQudWlkIjoiMDc1NGQyYTgtODU1NS0xMWU4LWExODctMDZkYjM0OGJkODA2Iiwic3ViIjoic3lzdGVtOnNlcnZpY2VhY2NvdW50Onh5ei1yaHRlLWFwcDpqZW5raW5zYWNjZXNzIn0.HKTmmvaTwgYi8hbgKwvtbiCBAKVVU5T7Gq7HO8_qmjGfDhWMB2oP6pPExoyzN1t3615RHFBXNfJLAri2t4qurmM1n0aHxrc8kMiFXMsoEPkoaCMawbQ0W-JwEF9Y-DRdszmDbP2tPr230hQBTeC1mPT6m1H3f5nGtxJL1aAIzF8wsZwtKx4ELaSIpMO-zZCPB1EQ7NyiZ3jIKB-JZ0FnJlnwH8UF4Z8jFdgghLYfYqWSNpwDbLpYjuRU98hkugSbjfceT-7TJL1uZU_dcR04kZf_4cNT05AJ_p2jkc6NCUdK-yhRb3FCxK1Tupmp9n2uBGUojDiAcqxhon2Ed8JjxQ
+----
++
+. Save this token somewhere (like a temporary text file). You will need it when setting up the pipeline.
+
+. This concludes the setup section.
+
+== Create a Jenkins Pipeline
+
+In this section you are creating a Jenkins Pipeline in OpenShift Cluster 1 that will build the container image from source and then deploy it to both production projects in both OpenShift Clusters.
+
+[NOTE]
+Due to time constraints in this lab you are using a rather simplified pipeline. Regardless the most important concepts can be demonstrated very well using this pipeline.
+
+. Log back into Cluster 1 (https://{cluster1_master})
++
+[source,sh]
+----
+oc login -u <username> <CLUSTER_URL>
+----
++
+. By the time you reach this step Jenkins should be ready. Make sure that your Jenkins pod is fully up and running:
++
+[source,sh]
+----
+oc get pod -n ${GUID}-jenkins
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME                                  READY     STATUS      RESTARTS   AGE
+jenkins-2-qz4qs                       1/1       Running     0          22m
+jenkins-slave-nodejs-skopeo-1-build   0/1       Completed   0          22m
+----
++
+. Make sure that the column under *READY* reads *1/1* next to your running Jenkins Pod (like in the example output above) before proceeding. You should also see that the build pod that built your custom Node.JS slave image shows as *Completed*.
+. Retrieve the route for your Jenkins instance
++
+[source,sh]
+----
+oc get route -n ${GUID}-jenkins
+----
++
+.Sample Output
+[source,texinfo, options=nowrap]
+----
+NAME      HOST/PORT                                              PATH  SERVICES   PORT      TERMINATION     WILDCARD
+jenkins   jenkins-user198-jenkins.apps.cloud1.rhte.opentlc.com         jenkins    <all>     edge/Redirect   None
+----
++
+. Using the route you just retrieved (*jenkins-user198-jenkins.apps.cloud1.rhte.opentlc.com* in the example above) open your web browser and navigate to your Jenkins Instance.
+. It may be necessary to confirm a security exception.
+. Click *Log in with OpenShift* and use your OpenShift credentials (e.g. `user198`) on the login screen. 
+. On the following *Authorize Access* screen click *Allow selected Permissions*.
+. After a while you will see the Jenkins Homepage.
+. Click `New Item` in the top left corner of the Jenkins Homepage
+.. Use the following values:
+* Item Name: *RHTE App*
+* Select *Pipeline*
+.. Click *OK* at the bottom of the page.
+. Find the checkbox next to *This project is parametrized* and check it.
+. Add 5 Parameters by clicking *Add Parameter*, selecting the type of parameter and entering both *Name* and *Default Values*
++
+|====
+|NAME|TYPE|DEFAULT
+|CLUSTER1_TOKEN|String|The token for the *jenkinsaccess* service account you retrieved earlier from Cluster 1
+|CLUSTER2_TOKEN|String|The token for the *jenkinsaccess* service account you retrieved earlier from Cluster 2
+|QUAY_USER|String|Your user name for Quay (*NOT* the name of your Robot Account)
+|QUAY_TOKEN|String|Your robot account token for quay that you saved when you created your Quay account
+|PREFIX|String|Your username prefix (e.g `user198`) for all your project names.
+|====
++
+. Scroll down and copy/paste the following pipeline into the Pipeline Box
++
+[source,javascript]
+----
+// Set up variables
+def quay_url      = "quay.multicloud.rhte.opentlc.com"
+def cluster1_base = "cloud1.rhte.opentlc.com"
+def cluster2_base = "cloud2.rhte.opentlc.com"
+def prodTag       = "1.${BUILD_NUMBER}"
+
+pipeline {
+  agent {
+    // Run the pipeline on a pod in Kubernetes/OpenShift
+    kubernetes {
+      // Define the slave pod based on our custom slave pod container image
+      label "skopeo-pod"
+      cloud "openshift"
+      inheritFrom "nodejs"
+      containerTemplate {
+        name "jnlp"
+        image "docker-registry.default.svc:5000/${PREFIX}-jenkins/jenkins-slave-nodejs-skopeo:v3.10"
+        resourceRequestMemory "1Gi"
+        resourceLimitMemory "2Gi"
+        resourceRequestCpu "500m"
+        resourceLimitCpu "1"
+      }
+    }
+  }
+  stages {
+    stage("Checkout Source Code") {
+      steps {
+        echo "Checking out Source Code"
+        git 'https://github.com/wkulhanek/rhte-app.git'
+      }
+    }
+    stage("Build Application") {
+      steps {
+        echo "Building Application"
+
+        // This is a Node.JS application and the slave pod has everything necessary
+        // to build this application.
+        sh "source /opt/rh/rh-nodejs4/enable && npm install"
+      }
+    }
+    stage("Build Container Image") {
+      steps {
+        script {
+          echo "Building Container Image"
+
+          // Use the cluster that Jenkins is running in
+          openshift.withCluster() {
+
+            // Use the "${PREFIX}-rhte-app-dev" project on that cluster
+            openshift.withProject("${PREFIX}-rhte-app-dev") {
+              // Use OpenShift to create the container image. Start the build for build configuration
+              // 'rhte-app' - which you created before as a binary build configuration. This means that
+              // Jenkins just copies the contents of the working directory ('.') into the builder image
+              // rather than the builder image doing the 'npm install'.
+              openshift.selector("bc", "rhte-app").startBuild("--from-dir=.", "--wait=true")
+
+              // Tag the built image as "rhte-app:${prodTag}"
+              openshift.tag("rhte-app:latest", "rhte-app:${prodTag}") 
+            }  
+          }
+        }
+      }
+    }
+
+    // ----------------------------------
+    // Copy to Quay BEGIN
+
+    // Copy to Quay END
+    // ----------------------------------
+
+    // ----------------------------------
+    // Copy to Clusters BEGIN
+
+    // Copy to Clusters END
+    // ----------------------------------
+
+    // ----------------------------------
+    // Deploy Images BEGIN
+
+    // Deploy Images END
+    // ----------------------------------
+  }
+}
+----
++
+This pipeline is written in *Declarative* Jenkinsfile syntax. Read through the pipeline and try to understand what the steps in the pipeline accomplish. This pipeline so far checks out source code, builds the Node.JS application (which is really just `npm install`) and then uses a binary build to create the container image in the development project.
++
+. Click *Save*
+
+. Click *Build with Parameters* on the left hand side
+* This opens the screen where you can enter parameters. If you set the default values as suggested above you do not have to edit anything there.
+* Click *Build*
+. You can follow along as the pipeline builds by clicking on the little triangle next to the *build number* in the *Build History* panel and selecting *Console Output*.
++
+A successful run will have console output similar to the one below:
++
+.Sample Output
+[source,texinfo]
+----
+Started by user user198
+[Pipeline] podTemplate
+[Pipeline] {
+[Pipeline] node
+Still waiting to schedule task
+Jenkins doesn’t have label skopeo-pod
+Running on skopeo-pod-nj8pc-pppfz in /home/jenkins/workspace/RHTE App
+[Pipeline] {
+[Pipeline] container
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Checkout Source Code)
+[Pipeline] echo
+Checking out Source Code
+[Pipeline] git
+Cloning the remote Git repository
+Cloning repository https://github.com/wkulhanek/rhte-app.git
+ > git init /home/jenkins/workspace/RHTE App # timeout=10
+Fetching upstream changes from https://github.com/wkulhanek/rhte-app.git
+ > git --version # timeout=10
+ > git fetch --tags --progress https://github.com/wkulhanek/rhte-app.git +refs/heads/*:refs/remotes/origin/*
+ > git config remote.origin.url https://github.com/wkulhanek/rhte-app.git # timeout=10
+ > git config --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/* # timeout=10
+ > git config remote.origin.url https://github.com/wkulhanek/rhte-app.git # timeout=10
+Fetching upstream changes from https://github.com/wkulhanek/rhte-app.git
+ > git fetch --tags --progress https://github.com/wkulhanek/rhte-app.git +refs/heads/*:refs/remotes/origin/*
+ > git rev-parse refs/remotes/origin/master^{commit} # timeout=10
+ > git rev-parse refs/remotes/origin/origin/master^{commit} # timeout=10
+Checking out Revision 44246d444181a3872e740883f0ebd69b8c818830 (refs/remotes/origin/master)
+ > git config core.sparsecheckout # timeout=10
+ > git checkout -f 44246d444181a3872e740883f0ebd69b8c818830
+ > git branch -a -v --no-abbrev # timeout=10
+ > git checkout -b master 44246d444181a3872e740883f0ebd69b8c818830
+Commit message: "Added output of PREFIX environment"
+First time build. Skipping changelog.
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Build Application)
+[Pipeline] echo
+Building Application
+[Pipeline] sh
+[RHTE App] Running shell script
++ source /opt/rh/rh-nodejs4/enable
+++ export PATH=/opt/rh/rh-nodejs4/root/usr/bin:/home/jenkins/node_modules/.bin/:/home/jenkins/.npm-global/bin/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+++ PATH=/opt/rh/rh-nodejs4/root/usr/bin:/home/jenkins/node_modules/.bin/:/home/jenkins/.npm-global/bin/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+++ export LD_LIBRARY_PATH=/opt/rh/rh-nodejs4/root/usr/lib64
+++ LD_LIBRARY_PATH=/opt/rh/rh-nodejs4/root/usr/lib64
+++ export PYTHONPATH=/opt/rh/rh-nodejs4/root/usr/lib/python2.7/site-packages
+++ PYTHONPATH=/opt/rh/rh-nodejs4/root/usr/lib/python2.7/site-packages
+++ export MANPATH=/opt/rh/rh-nodejs4/root/usr/share/man:
+++ MANPATH=/opt/rh/rh-nodejs4/root/usr/share/man:
++ npm install
+EXITCODE   0cookie-parser@1.4.3 node_modules/cookie-parser
+├── cookie-signature@1.0.6
+└── cookie@0.3.1
+
+http-errors@1.6.3 node_modules/http-errors
+├── setprototypeof@1.1.0
+├── inherits@2.0.3
+├── statuses@1.5.0
+└── depd@1.1.2
+
+morgan@1.9.0 node_modules/morgan
+├── on-headers@1.0.1
+├── depd@1.1.2
+├── basic-auth@2.0.0 (safe-buffer@5.1.1)
+└── on-finished@2.3.0 (ee-first@1.1.1)
+
+debug@2.6.9 node_modules/debug
+└── ms@2.0.0
+
+express@4.16.3 node_modules/express
+├── escape-html@1.0.3
+├── array-flatten@1.1.1
+├── setprototypeof@1.1.0
+├── cookie-signature@1.0.6
+├── utils-merge@1.0.1
+├── content-type@1.0.4
+├── methods@1.1.2
+├── merge-descriptors@1.0.1
+├── encodeurl@1.0.2
+├── etag@1.8.1
+├── range-parser@1.2.0
+├── cookie@0.3.1
+├── serve-static@1.13.2
+├── path-to-regexp@0.1.7
+├── parseurl@1.3.2
+├── fresh@0.5.2
+├── vary@1.1.2
+├── content-disposition@0.5.2
+├── statuses@1.4.0
+├── safe-buffer@5.1.1
+├── depd@1.1.2
+├── qs@6.5.1
+├── on-finished@2.3.0 (ee-first@1.1.1)
+├── finalhandler@1.1.1 (unpipe@1.0.0)
+├── proxy-addr@2.0.4 (forwarded@0.1.2, ipaddr.js@1.8.0)
+├── send@0.16.2 (ms@2.0.0, destroy@1.0.4, mime@1.4.1)
+├── type-is@1.6.16 (media-typer@0.3.0, mime-types@2.1.19)
+├── accepts@1.3.5 (negotiator@0.6.1, mime-types@2.1.19)
+└── body-parser@1.18.2 (bytes@3.0.0, iconv-lite@0.4.19, raw-body@2.3.2)
+
+pug@2.0.0-beta11 node_modules/pug
+├── pug-runtime@2.0.4
+├── pug-strip-comments@1.0.3 (pug-error@1.3.2)
+├── pug-load@2.0.11 (object-assign@4.1.1, pug-walk@1.1.7)
+├── pug-linker@2.0.3 (pug-error@1.3.2, pug-walk@1.1.7)
+├── pug-parser@2.0.2 (pug-error@1.3.2, token-stream@0.0.1)
+├── pug-lexer@3.1.0 (pug-error@1.3.2, is-expression@3.0.0, character-parser@2.2.0)
+├── pug-filters@2.1.5 (pug-error@1.3.2, pug-walk@1.1.7, resolve@1.8.1, jstransformer@1.0.0, clean-css@3.4.28, uglify-js@2.8.29, constantinople@3.1.2)
+└── pug-code-gen@1.1.1 (pug-error@1.3.2, pug-attrs@2.0.3, js-stringify@1.0.2, doctypes@1.1.0, void-elements@2.0.1, with@5.1.1, constantinople@3.1.2)
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Build Container Image)
+[Pipeline] script
+[Pipeline] {
+[Pipeline] echo
+Building Container Image
+[Pipeline] echo
+
+[Pipeline] _OcContextInit
+[Pipeline] _OcContextInit
+[Pipeline] readFile
+[Pipeline] _OcAction
+[Pipeline] readFile
+[Pipeline] _OcAction
+[Pipeline] }
+[Pipeline] // script
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // container
+[Pipeline] }
+[Pipeline] // node
+[Pipeline] }
+[Pipeline] // podTemplate
+[Pipeline] End of Pipeline
+Finished: SUCCESS
+----
+
+
+== Enhance the Jenkins Pipeline to copy the built image to Quay
+
+Now that you can build a container image successfully you could deploy it in the development project and run all kinds of tests.  Between the build and the creation of the image you could have also run unit tests stages. In this lab we don't really have time for any tests therefore you immediately created the container image in the previous pipeline run.
+
+The next step is to make this container image available to all production clusters. Previously you set up a Quay User ID and robot account. And you added *skopeo* to the Node.JS slave builder pod to enable copying of container images.
+
+. If you still see the previous build log navigate back to the Item definition by clicking *RHTE-App* towards the top left of your screen (in the light green bar).
+. You will see the graphical, successful, representation of your last pipeline run. Notice how the pipeline had 3 stages that all completed successfully (green). Also note the time that each stage took.
+. Open your Pipeline configuration again by clicking *Configure* (on the left) on the Pipeline Item.
+. Add this code to the pipeline between the markers `// Copy to Quay BEGIN` and `// Copy to Quay END`:
++
+[source,javascript]
+----
+    stage("Copy Image to Quay") {
+      steps {
+        script {
+          // The container image is in the development project.
+          // skopeo needs permission to access this image
+          // The jenkins service account that this pod is running under
+          // does have the correct permissions because you set this up in
+          // the Development project earlier.
+          // Retrieve the token for the Jenkins Service Account
+          def jenkinsToken = sh(returnStdout: true, script: "oc whoami -t").trim()
+
+          // Now use skopeo to copy the image from the integrated
+          // container registry to Quay. Both registries do
+          // not have proper certificates and will need
+          // --*-tls-verify=false set. Note how you are using the Quay robot account
+          // to access the Quay registry.
+          sh "skopeo copy --src-tls-verify=false --dest-tls-verify=false --src-creds openshift:${jenkinsToken} --dest-creds ${QUAY_USER}+jenkins:${QUAY_TOKEN} docker://docker-registry-default.apps.${cluster1_base}/${PREFIX}-rhte-app-dev/rhte-app:${prodTag} docker://${quay_url}/${QUAY_USER}/rhte-app:${prodTag}"
+        }
+      }
+    }
+----
++
+. Save the updated pipeline and build it again.
+. If you inspect the console output of the build you will see logs at the end similar to the example output below.
++
+.Sample Output
+[source,texinfo]
+----
+[...]
+
+[Pipeline] stage
+[Pipeline] { (Build Container Image)
+[Pipeline] script
+[Pipeline] {
+[Pipeline] echo
+Building Container Image
+[Pipeline] echo
+
+[Pipeline] _OcContextInit
+[Pipeline] _OcContextInit
+[Pipeline] readFile
+[Pipeline] _OcAction
+[Pipeline] readFile
+[Pipeline] _OcAction
+[Pipeline] }
+[Pipeline] // script
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Copy Image to Quay)
+[Pipeline] script
+[Pipeline] {
+[Pipeline] sh
+[RHTE App] Running shell script
++ oc whoami -t
+[Pipeline] sh
+[RHTE App] Running shell script
++ skopeo copy --src-tls-verify=false --dest-tls-verify=false --src-creds openshift:eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3BhY2UiOiJ3a3VsaGFuZS1qZW5raW5zIiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9zZWNyZXQubmFtZSI6ImplbmtpbnMtdG9rZW4ta3NwanYiLCJrdWJlcm5ldGVzLmlvL3NlcnZpY2VhY2NvdW50L3NlcnZpY2UtYWNjb3VudC5uYW1lIjoiamVua2lucyIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VydmljZS1hY2NvdW50LnVpZCI6ImQ2MDA3MWRlLTliZjktMTFlOC04YjM0LTAyMThhZmVhZDFjZSIsInN1YiI6InN5c3RlbTpzZXJ2aWNlYWNjb3VudDp3a3VsaGFuZS1qZW5raW5zOmplbmtpbnMifQ.YdKCiokG2vxEznCW2CMV60J92tKAVaRXNP2VfxZmhDIdWOs3NuZYxqjg-L-7dr5_Z-Jdpps2dGuUfKQASiAhIv9wLlJbQdHi58Djx0CbEtqMm9hF9J6scxGjhkYs3Ik3iLRMcoQQvqH5GBFLdwYJN7UEjUFGuRyULBNC0bzTFhnNPoQf6krqk3gF6EHf_HoXZDoklMRQEL2O4kzDep6pEcwE-MP6p760-lJYIF10qBk1crk9aQOG2BMQsm7DW-vR-wz8pIzpoGn9B7YP7oXMg4g84dP9u5qu4wc6TYv6cu-W3rYmzAQQbAPJTuEIhdIzTgjZ6us0hUNUPeRz7_i2hQ --dest-creds user198+jenkins:77TU1T1RUSI9I1VCCR8M6Y7SF5MLJZTQBY4PFCA74TSQRW7EM2NXG8IFDQ2F1K7Z docker://docker-registry-default.apps.cloud1.rhte.opentlc.com/user198-rhte-app-dev/rhte-app:1.2 docker://quay.multlicloud.rhte.opentlc.com/user198/rhte-app:1.2
+Getting image source signatures
+Copying blob sha256:428a9ca37f0e50a5d54a0540773f2c7d402b27ed1264cfef3b7b8d87ee102ec8
+ 47.60 MB / 71.45 MB 
+ 53.22 MB / 71.45 MB 
+ 59.12 MB / 71.45 MB 
+ 65.21 MB / 71.45 MB 
+ 71.02 MB / 71.45 MB 
+ 71.45 MB / 71.45 MB  2s
+Copying blob sha256:8115a58d83bdb789829910c62fc48223d5204954608a08f612f06bdd162677ab
+ 0 B / 1.27 KB 
+ 1.27 KB / 1.27 KB  0s
+Copying blob sha256:339bc4cdfd0f5fb6f1efb3efc66de4968af86634e1d852bfdb68a74ac66d5a39
+
+ 0 B / 7.30 MB 
+ 3.48 MB / 7.30 MB 
+ 7.30 MB / 7.30 MB 
+ 7.30 MB / 7.30 MB  0s
+Copying blob sha256:a1a7c4c6afd5e6c93096132070c2f2307a57131c0ac672ac70a684475d316fe9
+ 65.40 MB / 79.81 MB 
+ 71.14 MB / 79.81 MB 
+ 76.82 MB / 79.81 MB 
+ 79.81 MB / 79.81 MB 
+ 79.81 MB / 79.81 MB  2s
+Copying blob sha256:a41ced1af98ed6be4aff96df12e8c7a53f57961d40a69e68fdd2a59485a25795
+ 4.07 MB / 7.96 MB 
+ 7.96 MB / 7.96 MB 
+ 7.96 MB / 7.96 MB  0s
+Copying blob sha256:488a08865807161c63d05aefaebd24a5332fbb3ed17bb904863784f0eda6fa8b
+
+ 0 B / 3.97 MB 
+ 3.31 MB / 3.97 MB 
+ 3.97 MB / 3.97 MB  0s
+Copying config sha256:4f1a7bade48b9c0ee0cfe91f9bf2f0f9b4035aba58a1ac6b2e1e666c980b2a98
+
+ 0 B / 8.51 KB 
+ 8.51 KB / 8.51 KB  0s
+Writing manifest to image destination
+Writing manifest to image destination
+Storing signatures
+[Pipeline] }
+
+[...]
+----
++
+. Once the pipeline finishes successfully log back into Quay (http://{quay_hostname}) and validate that your image is now available in Quay:
+* Click the repository (*<username>/rhte-app*) to open the repository details.
+* Click on the *Tags* icon (second from the top on the left) to display all tags for this repository. You should see the tag number that corresponds to the pipeline build number.
+* You will see a timestamp when the image was *Last Modified* next to your repository name. This timestamp should be close to the current time.
+. Feel free to run the updated pipeline one more time and verify that that image is available in Quay as well - as a new tag.
+
+== Enhance the Jenkins Pipeline to copy the built image from Quay to the Production Clusters
+
+Now that the image is in Quay the pipeline can copy it to both production clusters. Once again you are using *skopeo* to copy the image from Quay to the projects. An alternative would be to configure the clusters to allow image pulling from the Quay registry - but our clusters do not have that configuration set. 
+
+. Open your Pipeline configuration again by clicking *Configure* (on the left) on the Pipeline Item.
+. Add this code to the pipeline between the markers `// Copy to Clusters BEGIN` and `// Copy to Clusters END`:
++
+[source,javascript]
+----
+    stage("Copy image to Production Cluster(s)") {
+      steps {
+        // Copy the image from Quay to Cluster 1
+        // You are using the token for the serviceaccount `jenkinsaccess`
+        // that you created in the production account earlier.
+        sh "skopeo copy --src-tls-verify=false --dest-tls-verify=false --dest-creds openshift:${CLUSTER1_TOKEN} --src-creds ${QUAY_USER}+jenkins:${QUAY_TOKEN} docker://${quay_url}/${QUAY_USER}/rhte-app:${prodTag}  docker://docker-registry-default.apps.${cluster1_base}/${PREFIX}-rhte-app/rhte-app:${prodTag}"
+
+        // Same for Cluster 2
+        sh "skopeo copy --src-tls-verify=false --dest-tls-verify=false --dest-creds openshift:${CLUSTER2_TOKEN} --src-creds ${QUAY_USER}+jenkins:${QUAY_TOKEN} docker://${quay_url}/${QUAY_USER}/rhte-app:${prodTag}  docker://docker-registry-default.apps.${cluster2_base}/${PREFIX}-rhte-app/rhte-app:${prodTag}"
+      }
+    }
+----
++
+. Save the updated pipeline and build it again.
+. You will see in the build logs that the image has been copied successfully from Quay to both clusters.
++
+.Sample Output
+[source,texinfo]
+----
+[...]
+
+[Pipeline] stage
+[Pipeline] { (Copy image to Production Cluster(s))
+[Pipeline] sh
+[RHTE App] Running shell script
++ skopeo copy --src-tls-verify=false --dest-tls-verify=false --dest-creds openshift:eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3BhY2UiOiJ3a3VsaGFuZS1yaHRlLWFwcCIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VjcmV0Lm5hbWUiOiJqZW5raW5zYWNjZXNzLXRva2VuLWI2Nnd2Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9zZXJ2aWNlLWFjY291bnQubmFtZSI6ImplbmtpbnNhY2Nlc3MiLCJrdWJlcm5ldGVzLmlvL3NlcnZpY2VhY2NvdW50L3NlcnZpY2UtYWNjb3VudC51aWQiOiJhNmMxZjBmYS05YmZhLTExZTgtOGIzNC0wMjE4YWZlYWQxY2UiLCJzdWIiOiJzeXN0ZW06c2VydmljZWFjY291bnQ6d2t1bGhhbmUtcmh0ZS1hcHA6amVua2luc2FjY2VzcyJ9.WbaDFfPI0A097_w_RuPG8NxkIp9_ZtO4CJK5-BAK-ew7NOcosRT7SPvN-M2XUXe12cdAChA761hpzDTCH2sj0vsZH82TngD_wJ_nCmvsr6hm3gQ_sZAgLIJj0wVFtqg3fV7S5CMcWn8QQnbA3AKbnePKUvMvLcpmL3lBKSG2gOftEi6ThN-UZzcCBJaN-uR4bV_UG499HPiuLYUKKvplsujag0vTLbobcSU69gLfVz-9z1vIwH4B2e_8zqH2c55NOtywfni9Rw9Gf7MouHilHfptGqXFBEbA85nVOymOI540xzH-CDdhsR_L19qP41fD2zGiwU6-FbUvICLkDtxhbw --src-creds  user198+jenkins:77TU1T1RUSI9I1VCCR8M6Y7SF5MLJZTQBY4PFCA74TSQRW7EM2NXG8IFDQ2F1K7Z docker://quay.multicloud.rhte.opentlc.com/user198/rhte-app:1.4 docker://docker-registry-default.apps.cloud1.rhte.opentlc.com/user198-rhte-app/rhte-app:1.4
+Getting image source signatures
+Copying blob sha256:428a9ca37f0e50a5d54a0540773f2c7d402b27ed1264cfef3b7b8d87ee102ec8
+ 71.45 MB / ? 
+ 71.45 MB / ?  5s
+Copying blob sha256:8115a58d83bdb789829910c62fc48223d5204954608a08f612f06bdd162677ab
+
+ 0 B / ? 
+ 1.27 KB / ? 
+ 1.27 KB / ?  0s
+Copying blob sha256:339bc4cdfd0f5fb6f1efb3efc66de4968af86634e1d852bfdb68a74ac66d5a39
+ 0 B / ? 
+ 2.22 MB / ? 
+ 5.73 MB / ? 
+ 7.30 MB / ? 
+ 7.30 MB / ?  0s
+Copying blob sha256:a1a7c4c6afd5e6c93096132070c2f2307a57131c0ac672ac70a684475d316fe9
+ 79.81 MB / ? 
+ 79.81 MB / ?  6s
+Copying blob sha256:a41ced1af98ed6be4aff96df12e8c7a53f57961d40a69e68fdd2a59485a25795
+ 7.96 MB / ? 
+ 7.96 MB / ?  1s
+Copying blob sha256:4d2c6556481974e9ac9519f75ebdc77b9d3359f66cfceec8774d1512eb8df1da
+ 3.97 MB / ? 
+ 3.97 MB / ?  0s
+Writing manifest to image destination
+Storing signatures
+[Pipeline] sh
+[RHTE App] Running shell script
++ skopeo copy --src-tls-verify=false --dest-tls-verify=false --dest-creds openshift:eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3BhY2UiOiJ3a3VsaGFuZS1yaHRlLWFwcCIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VjcmV0Lm5hbWUiOiJqZW5raW5zYWNjZXNzLXRva2VuLWZ3bXNtIiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9zZXJ2aWNlLWFjY291bnQubmFtZSI6ImplbmtpbnNhY2Nlc3MiLCJrdWJlcm5ldGVzLmlvL3NlcnZpY2VhY2NvdW50L3NlcnZpY2UtYWNjb3VudC51aWQiOiIyNDgzZTkxMy05YmZiLTExZTgtYmZjMy0wNjAxYmI3MDkzNjAiLCJzdWIiOiJzeXN0ZW06c2VydmljZWFjY291bnQ6d2t1bGhhbmUtcmh0ZS1hcHA6amVua2luc2FjY2VzcyJ9.kG-fkZKnGWSEtMHEdOyrKRENhgXLPA-geVpEYD1YFCNatrUHczRJHMwCwV8ZlMuQI3xQF9z0gsLNlchewvy5PtLOE7xnFyka429Wisz3pZ-lrTTRe3QnTuVWSfjWBwtrXbx0IDkGnNBet18HDQzJHnpKwPPtsc0_QGagNPJhOyNQ6Pp7wVrnWGM0e7U-hVb7ydLPdVaRYrmU26re4OjbGdXB6PBZIzqQOFgB-LaQ_Yyt-SmxOFsEOltBNjY3kFmTi7QQkW8mAM-ysiy7cGqlCo8LnRnRjlJhy3SHoLSA9WhPlnYACZt0gL5flxtPUon1m__aHcZE6FjCq8wQ52DfYA --src-creds user198+jenkins:77TU1T1RUSI9I1VCCR8M6Y7SF5MLJZTQBY4PFCA74TSQRW7EM2NXG8IFDQ2F1K7Z docker://quay.multicloud.rhte.opentlc.com/user198/rhte-app:1.4 docker://docker-registry-default.apps.cloud2.rhte.opentlc.com/user198-rhte-app/rhte-app:1.4
+Getting image source signatures
+Copying blob sha256:428a9ca37f0e50a5d54a0540773f2c7d402b27ed1264cfef3b7b8d87ee102ec8
+ 71.45 MB / ? 
+ 71.45 MB / ?  6s
+Copying blob sha256:8115a58d83bdb789829910c62fc48223d5204954608a08f612f06bdd162677ab
+
+ 0 B / ? 
+ 1.27 KB / ? 
+ 1.27 KB / ?  0s
+Copying blob sha256:339bc4cdfd0f5fb6f1efb3efc66de4968af86634e1d852bfdb68a74ac66d5a39
+
+ 0 B / ? 
+ 1.83 MB / ? 
+ 5.33 MB / ? 
+ 7.30 MB / ? 
+ 7.30 MB / ?  1s
+Copying blob sha256:a1a7c4c6afd5e6c93096132070c2f2307a57131c0ac672ac70a684475d316fe9
+ 79.81 MB / ? 
+ 79.81 MB / ?  7s
+Copying blob sha256:a41ced1af98ed6be4aff96df12e8c7a53f57961d40a69e68fdd2a59485a25795
+ 7.96 MB / ? 
+ 7.96 MB / ?  1s
+Copying blob sha256:4d2c6556481974e9ac9519f75ebdc77b9d3359f66cfceec8774d1512eb8df1da
+
+ 0 B / ? 
+ 1.96 MB / ? 
+ 3.97 MB / ? 
+ 3.97 MB / ?  0s
+Writing manifest to image destination
+Storing signatures
+[Pipeline] }
+
+[...]
+----
+
+
+== Enhance the Jenkins Pipeline to deploy the image on the Production Clusters
+
+The last step in our pipeline is to actually deploy this image using the deployment configurations that you created earlier. Again for simplicity you are doing a very simple "oc rollout latest" while in a proper production environment you would most likely execute a Blue/Green deployment to avoid any downtime - and have an easy way to roll back to a previously working version in case anything went wrong.
+
+. Open your Pipeline configuration again by clicking *Configure* (on the left) on the Pipeline Item.
+. Add this code to the pipeline between the markers `// Deploy Images BEGIN` and `// Deploy Images END`:
++
+[source,javascript]
+----
+    stage("Deploy Production Applications on Cluster 1") {
+      steps {
+        script {
+        // Update image for Deployment Config on Cluster 1
+          openshift.withCluster("https://master.${cluster1_base}", "${CLUSTER1_TOKEN}") {
+
+            // Use the production project
+            openshift.withProject("${PREFIX}-rhte-app") {
+              // Update the image in the deployment config to point to the image you just copied
+              // from Quay.
+              openshift.set("image", "dc/rhte-app", "rhte-app=docker-registry.default.svc:5000/${PREFIX}-rhte-app/rhte-app:${prodTag}")
+
+              // Set the environment variable IMAGE_TAG to the current image tag. The Node.JS
+              // application displays this environment variable.
+              openshift.set("env", "dc/rhte-app", "IMAGE_TAG=${prodTag}")
+
+              // Redeploy the application.
+              openshift.selector("dc", "rhte-app").rollout().latest();
+            }
+          }
+        }
+      }
+    }
+    stage("Deploy Production Applications on Cluster 2") {
+      steps {
+        script {
+        // Update image for Deployment Config (same as for cluster 1)
+          openshift.withCluster("insecure://master.${cluster2_base}", "${CLUSTER2_TOKEN}") {
+            openshift.withProject("${PREFIX}-rhte-app") {
+              openshift.set("image", "dc/rhte-app", "rhte-app=docker-registry.default.svc:5000/${PREFIX}-rhte-app/rhte-app:${prodTag}")
+              openshift.set("env", "dc/rhte-app", "IMAGE_TAG=${prodTag}")
+              openshift.selector("dc", "rhte-app").rollout().latest();
+            }
+          }
+        }
+      }
+    }
+----
++
+. Save the updated pipeline and build it again.
+. Once your build completes successfully your application will be running on both clusters.
+. You will see in the build logs that the application deployed successfully on both clusters.
++
+.Sample Output
+[source,texinfo]
+----
+[...]
+
+[Pipeline] stage
+[Pipeline] { (Deploy Production Applications on Cluster 1)
+[Pipeline] script
+[Pipeline] {
+[Pipeline] _OcContextInit
+[Pipeline] _OcContextInit
+[Pipeline] _OcAction
+[Pipeline] _OcAction
+[Pipeline] _OcAction
+[rollout:latest:deploymentconfig/rhte-app] deploymentconfig "rhte-app" rolled out
+[rollout:latest:deploymentconfig/rhte-app] 
+[Pipeline] }
+[Pipeline] // script
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Deploy Production Applications on Cluster 2)
+[Pipeline] script
+[Pipeline] {
+[Pipeline] _OcContextInit
+[Pipeline] _OcContextInit
+[Pipeline] _OcAction
+[Pipeline] _OcAction
+[Pipeline] _OcAction
+[rollout:latest:deploymentconfig/rhte-app] deploymentconfig "rhte-app" rolled out
+[rollout:latest:deploymentconfig/rhte-app] 
+[Pipeline] }
+[Pipeline] // script
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // container
+[Pipeline] }
+[Pipeline] // node
+[Pipeline] }
+[Pipeline] // podTemplate
+[Pipeline] End of Pipeline
+Finished: SUCCESS
+----
+
+
+=== Verify Application on both Clusters
+
+Now that your application has been deployed to both clusters it is time to verify the applications.
+
+. First Verify the application on Cluster 1.
++
+In your web browser open the URL to your application (replacing `user198` with your username): 
++
+====
+http://rhte-app-user198-rhte-app.apps.{cluster1_base}
+====
++
+You should see a web site that shows the Cluster Name ("Cluster 1") as well as the tag of your image (which is built using the build number from Jenkins).
+
+. Second verify the application on Cluster 2.
++
+In your web browser open the URL to your application (replacing `user198` with your username): 
++
+====
+http://rhte-app-user198-rhte-app.apps.{cluster2_base}
+====
++
+You should see a web site that shows the Cluster Name ("Cluster 2") as well as the tag of your image. The Image tag should be the same as in the first cluster.
++
+. Third verify that the load balancer that is in front of our two clusters routes to your application correctly.
++
+In your web browser open the URL to your application (replacing `user198` with your username):
++
+====
+http://user198.apps.mcloud.rhte.opentlc.com
+====
++
+You will be randomly routed to one of your two clusters. Note that in a web browser the session affinity will prevent you from observing any load balancing.
++
+. To observe load balancing open a terminal window and type the following command (make sure to set the *GUID* variable to your username if it not still set):
++
+[source,sh]
+----
+export GUID=user198
+for i in {1..20}
+do 
+  curl http://${GUID}.apps.mcloud.rhte.opentlc.com/cluster
+done
+----
++
+.Sample Output
+[source,texinfo]
+----
+Cluster 1
+Cluster 2
+Cluster 1
+Cluster 2
+[...]
+----
++
+You will see that the load balancer does a simple round robin load balancing between the application on cluster 1 and cluster 2.
+
+== Cleanup
+
+Now that you have finished this lab, please take a moment to clean up the environment for the next set of students.
+
+. Log into the OpenShift Cluster 1 (https://{cluster1_master}).
++
+[source,sh]
+----
+oc login -u <username> <CLUSTER_URL>
+----
++
+. Delete the Jenkins Project on Cluster 1
++
+[source,sh]
+----
+oc delete project ${GUID}-jenkins
+----
++
+. Delete the Development Project on Cluster 1
++
+[source,sh]
+----
+oc delete project ${GUID}-rhte-app-dev
+----
++
+. Delete the Production Project on Cluster 1
++
+[source,sh]
+----
+oc delete project ${GUID}-rhte-app
+----
++
+. Log into the OpenShift Cluster 2 (https://{cluster2_master}).
++
+[source,sh]
+----
+oc login -u <username> <CLUSTER_URL>
+----
++
+. Delete the Production Project on Cluster 2
++
+[source,sh]
+----
+oc delete project ${GUID}-rhte-app
+----
+
+*Congratulations! You finished this lab.*

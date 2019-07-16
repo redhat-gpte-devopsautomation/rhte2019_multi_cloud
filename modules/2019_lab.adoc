@@ -1,0 +1,86 @@
+
+From your Client VM log into the OpenShift Cluster 1 (use https://{cluster1_master} as `<CLUSTER_URL>`).
+
+oc new-project ${GUID}-rhte-app-dev --display-name "RHTE Application (Development)"
+oc new-app openshift/nodejs:0.0 --name=rhte-app --allow-missing-imagestream-tags=true -n ${GUID}-rhte-app-dev
+oc set triggers dc/rhte-app --remove-all -n ${GUID}-rhte-app-dev
+oc set env dc/rhte-app CLUSTER_NAME="Cluster 1 Dev" -n ${GUID}-rhte-app-dev
+oc set env dc/rhte-app PREFIX="${GUID}" -n ${GUID}-rhte-app-dev
+oc expose dc rhte-app --port 3000 -n ${GUID}-rhte-app-dev
+oc expose svc/rhte-app --name rhte-app -n ${GUID}-rhte-app-dev
+
+oc new-project ${GUID}-rhte-app --display-name "RHTE Application"
+oc new-app openshift/nodejs:0.0 --name=rhte-app --allow-missing-imagestream-tags=true -n ${GUID}-rhte-app
+oc set triggers dc/rhte-app --remove-all -n ${GUID}-rhte-app
+oc set env dc/rhte-app CLUSTER_NAME="Cluster 1" -n ${GUID}-rhte-app
+oc set env dc/rhte-app PREFIX="${GUID}" -n ${GUID}-rhte-app
+oc expose dc rhte-app --port 3000 -n ${GUID}-rhte-app
+oc expose svc/rhte-app --name rhte-app -n ${GUID}-rhte-app
+
+Create Service Account:
+Building container images using build tools such as S2I, Buildah, Kaniko, etc require privileged access to the cluster. OpenShift default security setting does not allow privileged containers unless specifically configured. Create a service account for running pipelines and enable it to run privileged pods for building images:
+
+oc create serviceaccount pipeline -n ${GUID}-rhte-app-dev
+oc adm policy add-scc-to-user privileged -z pipeline -n ${GUID}-rhte-app-dev
+oc adm policy add-role-to-user edit -z pipeline -n ${GUID}-rhte-app-dev
+
+In the dev project create the following Tasks
+* S2I NodeJS:
++
+[source,sh]
+----
+oc create -f https://raw.githubusercontent.com/openshift/pipelines-catalog/master/s2i-nodejs/s2i-nodejs-task.yaml
+----
+
+* OpenShift CLI:
++
+[source,sh]
+----
+oc create -f https://raw.githubusercontent.com/tektoncd/catalog/master/openshift-client/openshift-client-task.yaml
+----
+
+Test the S2i Build:
++
+[source,sh]
+----
+oc create -f taskrun_test_s2i_build.yaml
+oc logs <pod> -c build-step-build
+oc logs <pod> -c build-step-push
+----
+
+Test the Setting Image Step
++
+[source,sh]
+----
+oc create -f taskrun_test_set_image.yaml
+oc logs <pod> -c build-step-oc
+----
+
+
+In the Dev Project create the pipeline resources
+* Git:
++
+[source,sh]
+----
+oc create -f resource_rhte_git.yaml
+----
+* Dev Image (replace GUID):
++
+[source,sh]
+----
+oc create -f resource_rhte_dev_image.yaml
+----
+
+Create Pipeline:
++
+[source,sh]
+----
+oc create -f pipeline_rhte.yaml
+----
+
+Create the PipelineRun
++
+[source,sh]
+----
+oc create -f pipelinerun_rhte.yaml
+----

@@ -1,0 +1,61 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Pipeline
+metadata:
+  name: rhte-deploy-pipeline
+spec:
+  resources:
+  - name: source-repo
+    type: git
+  - name: dev-image
+    type: image
+
+  tasks:
+  - name: build
+    taskRef:
+      name: s2i-nodejs
+    params:
+      - name: TLSVERIFY
+        value: "false"
+    resources:
+      inputs:
+      - name: source
+        resource: source-repo
+      outputs:
+      - name: image
+        resource: dev-image
+
+  - name: tag-dev-image
+    taskRef:
+      name: openshift-client
+    runAfter:
+      - build
+    params:
+    - name: ARGS
+      value: "tag rhte-app:latest rhte-app:test"
+
+  - name: set-image-in-dev
+    taskRef:
+      name: openshift-client
+    runAfter:
+      - tag-dev-image
+    params:
+    - name: ARGS
+      value: "set image dc rhte-app rhte-app=image-registry.openshift-image-registry.svc:5000/1d1a-rhte-app-dev/rhte-app:test"
+
+  - name: deploy-to-dev
+    taskRef:
+      name: openshift-client
+    runAfter:
+      - set-image-in-dev
+    params:
+    - name: ARGS
+      value: "rollout latest rhte-app"
+
+  - name: copy-to-quay
+    runAfter:
+      - deploy-to-dev
+    taskRef:
+      name: skopeo
+    params:
+    - name: ARGS
+      value: "copy --src-tls-verify=false docker://image-registry.openshift-image-registry.svc:5000/1d1a-rhte-app-dev/rhte-app:test docker://quay.io/wkulhanek/rhte-app:test"

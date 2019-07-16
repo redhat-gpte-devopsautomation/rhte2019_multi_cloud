@@ -1,0 +1,13 @@
+apiVersion: tekton.dev/v1alpha1
+kind: TaskRun
+metadata:
+  name: copy-to-quay
+spec:
+  # Use service account with git and image repo credentials
+  serviceAccount: pipeline
+  taskRef:
+    name: skopeo
+  inputs:
+    params:
+    - name: ARGS
+      value: "copy --src-tls-verify=false docker://image-registry.openshift-image-registry.svc:5000/1d1a-rhte-app-dev/rhte-app:test docker://quay.io/wkulhanek/rhte-app:test"

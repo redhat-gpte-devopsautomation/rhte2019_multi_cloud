@@ -1,0 +1,149 @@
+// Set up variables
+def quay_url      = "quay.multicloud.rhte.opentlc.com"
+def cluster1_base = "cloud1.rhte.opentlc.com"
+def cluster2_base = "cloud2.rhte.opentlc.com"
+def prodTag       = "1.${BUILD_NUMBER}"
+
+pipeline {
+  agent {
+    // Run the pipeline on a pod in Kubernetes/OpenShift
+    kubernetes {
+      // Define the slave pod based on our custom slave
+      // pod container image
+      label "skopeo-pod"
+      cloud "openshift"
+      inheritFrom "nodejs"
+      containerTemplate {
+        name "jnlp"
+        image "docker-registry.default.svc:5000/${PREFIX}-jenkins/jenkins-slave-nodejs-skopeo:v3.10"
+        resourceRequestMemory "1Gi"
+        resourceLimitMemory "2Gi"
+        resourceRequestCpu "500m"
+        resourceLimitCpu "1"
+      }
+    }
+  }
+  stages {
+    stage("Checkout Source Code") {
+      steps {
+        echo "Checking out Source Code"
+        git 'https://github.com/wkulhanek/rhte-app.git'
+      }
+    }
+    stage("Build Application") {
+      steps {
+        echo "Building Application"
+
+        // This is a Node.JS application and the slave
+        // pod has everything necessary
+        // to build this application.
+        sh "source /opt/rh/rh-nodejs4/enable && npm install"
+      }
+    }
+    stage("Build Container Image") {
+      steps {
+        script {
+          echo "Building Container Image"
+
+          // Use the cluster that Jenkins is running in
+          openshift.withCluster() {
+
+            // Use the "${PREFIX}-rhte-app-dev" project on that cluster
+            openshift.withProject("${PREFIX}-rhte-app-dev") {
+              // Use OpenShift to create the container image. Start the build for build configuration
+              // 'rhte-app' - which you created before as a binary build configuration. This means that
+              // Jenkins just copies the contents of the working directory ('.') into the builder image
+              // rather than the builder image doing the 'npm install'.
+              openshift.selector("bc", "rhte-app").startBuild("--from-dir=.", "--wait=true")
+
+              // Tag the built image as "rhte-app:${prodTag}"
+              openshift.tag("rhte-app:latest", "rhte-app:${prodTag}")
+            }
+          }
+        }
+      }
+    }
+
+    // ----------------------------------
+    // Copy to Quay BEGIN
+    stage("Copy Image to Quay") {
+      steps {
+        script {
+          // The container image is in the development project.
+          // skopeo needs permission to access this image
+          // The jenkins service account that this pod is running under does have the correct permissions because you set this up in the
+          // Development project earlier.
+          // Retrieve the token for the Jenkins Service Account
+          def jenkinsToken = sh(returnStdout: true, script: "oc whoami -t").trim()
+
+          // Now use skopeo to copy the image from the integrated
+          // container registry to Quay. Both registries do
+          // not have proper certificates and will need
+          // --*-tls-verify=false set. Note how you are using the Quay robot account
+          // to access the Quay registry.
+          sh "skopeo copy --src-tls-verify=false --dest-tls-verify=false --src-creds openshift:${jenkinsToken} --dest-creds ${QUAY_USER}+jenkins:${QUAY_TOKEN} docker://docker-registry-default.apps.${cluster1_base}/${PREFIX}-rhte-app-dev/rhte-app:${prodTag} docker://${quay_url}/${QUAY_USER}/rhte-app:${prodTag}"
+        }
+      }
+    }
+    // Copy to Quay END
+    // ----------------------------------
+
+    // ----------------------------------
+    // Copy to Clusters BEGIN
+    stage("Copy image to Production Cluster(s)") {
+      steps {
+        // Copy the image from Quay to Cluster 1
+        // You are using the token for the serviceaccount `jenkinsaccess`
+        // that you created in the production account earlier.
+        sh "skopeo copy --src-tls-verify=false --dest-tls-verify=false --dest-creds openshift:${CLUSTER1_TOKEN} --src-creds ${QUAY_USER}+jenkins:${QUAY_TOKEN} docker://${quay_url}/${QUAY_USER}/rhte-app:${prodTag}  docker://docker-registry-default.apps.${cluster1_base}/${PREFIX}-rhte-app/rhte-app:${prodTag}"
+
+        // Same for Cluster 2
+        sh "skopeo copy --src-tls-verify=false --dest-tls-verify=false --dest-creds openshift:${CLUSTER2_TOKEN} --src-creds ${QUAY_USER}+jenkins:${QUAY_TOKEN} docker://${quay_url}/${QUAY_USER}/rhte-app:${prodTag}  docker://docker-registry-default.apps.${cluster2_base}/${PREFIX}-rhte-app/rhte-app:${prodTag}"
+      }
+    }
+    // Copy to Clusters END
+    // ----------------------------------
+
+    // ----------------------------------
+    // Deploy Images BEGIN
+    stage("Deploy Production Applications on Cluster 1") {
+      steps {
+        script {
+        // Update image for Deployment Config on Cluster 1
+          openshift.withCluster("https://master.${cluster1_base}", "${CLUSTER1_TOKEN}") {
+
+            // Use the production project
+            openshift.withProject("${PREFIX}-rhte-app") {
+              // Update the image in the deployment config to point to the image you just copied
+              // from Quay.
+              openshift.set("image", "dc/rhte-app", "rhte-app=docker-registry.default.svc:5000/${PREFIX}-rhte-app/rhte-app:${prodTag}")
+
+              // Set the environment variable IMAGE_TAG to the current image tag. The Node.JS
+              // application displays this environment variable.
+              openshift.set("env", "dc/rhte-app", "IMAGE_TAG=${prodTag}")
+
+              // Redeploy the application.
+              openshift.selector("dc", "rhte-app").rollout().latest();
+            }
+          }
+        }
+      }
+    }
+    stage("Deploy Production Applications on Cluster 2") {
+      steps {
+        script {
+        // Update image for Deployment Config (same as for cluster 1)
+          openshift.withCluster("insecure://master.${cluster2_base}", "${CLUSTER2_TOKEN}") {
+            openshift.withProject("${PREFIX}-rhte-app") {
+              openshift.set("image", "dc/rhte-app", "rhte-app=docker-registry.default.svc:5000/${PREFIX}-rhte-app/rhte-app:${prodTag}")
+              openshift.set("env", "dc/rhte-app", "IMAGE_TAG=${prodTag}")
+              openshift.selector("dc", "rhte-app").rollout().latest();
+            }
+          }
+        }
+      }
+    }
+    // Deploy Images END
+    // ----------------------------------
+  }
+}

@@ -1,0 +1,17 @@
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineRun
+metadata:
+  generateName: rhte-deploy-pipelinerun-
+spec:
+  serviceAccount: 'pipeline'
+  pipelineRef:
+    name: rhte-deploy-pipeline
+  trigger:
+    type: manual
+  resources:
+  - name: source-repo
+    resourceRef:
+      name: rhte-git
+  - name: dev-image
+    resourceRef:
+      name: rhte-dev-image
