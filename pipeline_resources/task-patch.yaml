@@ -1,0 +1,22 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: patch
+spec:
+  inputs:
+    params:
+    - name: RESOURCE
+      description: The resource (e.g. deployment, federateddeployment, ...) to updated
+    - name: RESOURCE_NAME
+      description: The name of the resource to be patched
+    - name: NAMESPACE
+      description: The Namespace that has the Federated Deployment
+    - name: PATCH
+      description: The patch string to use
+    - name: TYPE
+      description: The type of patch
+      default: strategic
+  steps:
+  - name: patch
+    image: quay.io/openshift-pipeline/openshift-cli:latest
+    command: ['/usr/local/bin/oc-origin', 'patch', '${inputs.params.RESOURCE}', '${inputs.params.RESOURCE_NAME}', '-n', '${inputs.params.NAMESPACE}', '--type', '${inputs.params.TYPE}', '--patch', '${inputs.params.PATCH}']

@@ -1,0 +1,49 @@
+apiVersion: types.kubefed.k8s.io/v1beta1
+kind: FederatedDeployment
+metadata:
+  name: rhte-app
+spec:
+  template:
+    metadata:
+      name: rhte-app
+      labels:
+        name: rhte-app
+    spec:
+      selector:
+        matchLabels:
+          name: rhte-app
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            name: rhte-app
+        spec:
+          containers:
+          - name: rhte-app
+            image: quay.io/wkulhanek/rhte-placeholder:latest
+            ports:
+            - containerPort: 3000
+            env:
+            - name: CLUSTER_NAME
+              value: "To be overwritten"
+            - name: IMAGE_TAG
+              value: "To be overwritten"
+            - name: PREFIX
+              value: "To be overwritten"
+  placement:
+    clusters:
+    - name: cluster1
+    - name: cluster2
+  overrides:
+  - clusterName: cluster1
+    clusterOverrides:
+    - path: /spec/template/spec/containers/0/env/0/value
+      value: "Cluster 1"
+    - path: /spec/template/spec/containers/0/env/2/value
+      value: $GUID1
+  - clusterName: cluster2
+    clusterOverrides:
+    - path: /spec/template/spec/containers/0/env/0/value
+      value: "Cluster 2"
+    - path: /spec/template/spec/containers/0/env/2/value
+      value: $GUID2

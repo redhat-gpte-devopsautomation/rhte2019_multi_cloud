@@ -1,0 +1,691 @@
+https://github.com/openshift/federation-dev/tree/master/automated-demo
+https://blog.openshift.com/cloud-native-ci-cd-with-openshift-pipelines/
+
+Automatic Install of KubeFed:
+https://gist.github.com/mvazquezc/1426a8c38e02d8f2b2c5fd96b209d854
+
+Manual install for cluster wide KubeFed
+https://github.com/openshift/federation-dev/blob/3e6e8deb911a24695b27afbb389e1af184a26919/README-ocp4-cs.md
+
+Kubefedctl:
+https://github.com/kubernetes-sigs/kubefed/releases/download/v0.1.0-rc3/kubefedctl-0.1.0-rc3-darwin-amd64.tgz
+https://github.com/kubernetes-sigs/kubefed/releases/download/v0.1.0-rc3/kubefedctl-0.1.0-rc3-linux-amd64.tgz
+
+Set up Kube Federation according to document 2.
+
+Created federated resources:
+for type in namespaces services deployments.apps ingresses.extensions
+do
+    kubefedctl enable $type --kubefed-namespace openshift-operators
+done
+
+Lab begins:
+--------------
+Log into Cluster 1 Bastion VM
+ssh student@bastion.min1.example.opentlc.com
+
+export GUID1=min1
+export GUID2=min2
+
+export CLUSTER1=cluster-$GUID1.$GUID1.example.opentlc.com
+export CLUSTER2=cluster-$GUID2.$GUID2.example.opentlc.com
+
+Use a cluster admin user (user1 is a cluster-admin in our clusters)
+oc login -u user1 -p r3dh4t1! https://api.${CLUSTER1}:6443
+oc project default
+
+# Validate Context:
+oc config get-contexts
+
+# Save the current context in a variable
+export CONTEXT1=default/api-$(echo $CLUSTER1 | sed 's/\./-/g'):6443/user1
+
+Log into second cluster:
+oc login -u user1 -p r3dh4t1! https://api.${CLUSTER2}:6443
+oc project default
+oc config get-contexts|grep default
+export CONTEXT2=default/api-$(echo $CLUSTER2 | sed 's/\./-/g'):6443/user1
+
+Log back into first cluster:
+oc login -u user1 -p r3dh4t1! https://api.${CLUSTER1}:6443
+
+Create initial cluster:
+kubefedctl join cluster1 --host-cluster-context $CONTEXT1 --cluster-context $CONTEXT1 --v=2 --host-cluster-name cluster1
+
+Get clusters:
+oc get kubefedclusters  -n kube-federation-system
+# Make sure it says True under READY
+
+oc describe kubefedcluster cluster1  -n kube-federation-system
+
+Join the second cluster
+kubefedctl join cluster2 --host-cluster-context ${CONTEXT1} --cluster-context ${CONTEXT2} --v=2 --host-cluster-name cluster1
+
+Validate:
+oc get kubefedclusters  -n kube-federation-system
+# Wait until cluster2 is ready
+oc describe kubefedcluster cluster2  -n kube-federation-system
+
+# Create and federate the Project
+# oc new-project rhte-app
+
+kubefedctl federate namespace rhte-app
+
+mkdir $HOME/rhte-app
+cd $HOME/rhte-app
+
+# Deploy the app (works)
+
+rhte-app.yaml:
+----
+cat << EOF >$HOME/rhte-app/deployment.yaml
+apiVersion: types.kubefed.k8s.io/v1beta1
+kind: FederatedDeployment
+metadata:
+  name: rhte-app
+spec:
+  template:
+    metadata:
+      name: rhte-app
+      labels:
+        name: rhte-app
+    spec:
+      selector:
+        matchLabels:
+          name: rhte-app
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            name: rhte-app
+        spec:
+          containers:
+          - name: rhte-app
+            image: quay.io/wkulhanek/rhte-placeholder:latest
+            ports:
+            - containerPort: 3000
+            env:
+            - name: CLUSTER_NAME
+              value: "To be overwritten"
+            - name: IMAGE_TAG
+              value: "To be overwritten"
+            - name: PREFIX
+              value: "To be overwritten"
+  placement:
+    clusters:
+    - name: cluster1
+    - name: cluster2
+  overrides:
+  - clusterName: cluster1
+    clusterOverrides:
+    - path: /spec/template/spec/containers/0/env/0/value
+      value: "Cluster 1"
+    - path: /spec/template/spec/containers/0/env/2/value
+      value: $GUID1
+  - clusterName: cluster2
+    clusterOverrides:
+    - path: /spec/template/spec/containers/0/env/0/value
+      value: "Cluster 2"
+    - path: /spec/template/spec/containers/0/env/2/value
+      value: $GUID2
+EOF
+----
+
+# Create the app
+oc create -f $HOME/rhte-app/deployment.yaml
+
+Create federated service
+----
+cat << EOF >$HOME/rhte-app/service.yaml
+apiVersion: types.kubefed.k8s.io/v1beta1
+kind: FederatedService
+metadata:
+  name: rhte-app
+spec:
+  template:
+    spec:
+      selector:
+        name: rhte-app
+      ports:
+        - name: http
+          port: 3000
+  placement:
+    clusters:
+    - name: cluster1
+    - name: cluster2
+EOF
+----
+
+oc create -f $HOME/rhte-app/service.yaml
+
+Create the federated Ingress:
+----
+cat << EOF >$HOME/rhte-app/ingress.yaml
+apiVersion: types.kubefed.k8s.io/v1beta1
+kind: FederatedIngress
+metadata:
+  name: rhte-app
+spec:
+  template:
+    spec:
+      rules:
+      - host: rhte-app
+        http:
+          paths:
+          - path: /
+            backend:
+              serviceName: rhte-app
+              servicePort: 3000
+  placement:
+    clusters:
+    - name: cluster1
+    - name: cluster2
+  overrides:
+  - clusterName: cluster1
+    clusterOverrides:
+    - path: /spec/rules/0/host
+      value: rhte-app-rhte-app.apps.$CLUSTER1
+  - clusterName: cluster2
+    clusterOverrides:
+    - path: /spec/rules/0/host
+      value: rhte-app-rhte-app.apps.$CLUSTER2
+EOF
+----
+
+oc create -f $HOME/rhte-app/ingress.yaml
+
+Validate that the ingress exists
+oc get ingress
+
+Validate that the route (created from the Ingress) exists
+oc get route
+
+Check the route in a browser. You should see Placeholder values
+
+Validate Cluster 2:
+oc login -u user1 -p r3dh4t1! https://api.${CLUSTER2}:6443
+oc get all -n rhte-app
+----
+NAME                                     READY   STATUS    RESTARTS   AGE
+pod/federated-rhte-app-b478947d7-mr9rn   1/1     Running   0          32m
+
+NAME               TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)    AGE
+service/rhte-app   ClusterIP   172.30.72.57   <none>        3000/TCP   31m
+
+NAME                                 READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/federated-rhte-app   1/1     1            1           32m
+
+NAME                                           DESIRED   CURRENT   READY   AGE
+replicaset.apps/federated-rhte-app-b478947d7   1         1         1       32m
+
+NAME                                      HOST/PORT                                                   PATH   SERVICES   PORT   TERMINATION   WILDCARD
+route.route.openshift.io/rhte-app-qjnt4   rhte-app-rhte-app.apps.cluster-min2.min2.ocp4.opentlc.com   /      rhte-app   3000                 None
+----
+
+Notice that the route is updated for Cluster 2.
+
+Validate that the deployment has been updated with environment variables for Cluster 2 as well:
+oc describe deploy rhte-app
+
+
+Log back into Cluster 1:
+oc login -u user1 -p r3dh4t1! https://api.${CLUSTER1}:6443
+
+This concludes the set up for the federation project.
+
+# Tekton Pipelines
+Installation Instructions (install into project tekton-pipelines):
+https://github.com/openshift/pipelines-tutorial/blob/master/install-operator.md
+
+Install Dashboard:
+oc process https://raw.githubusercontent.com/tektoncd/dashboard/master/config/templates/deploy.yaml | oc apply -f -
+oc process https://raw.githubusercontent.com/tektoncd/dashboard/master/config/templates/build.yaml | oc apply -f -
+oc expose svc tekton-dashboard -n tekton-pipelines
+oc get route -n tekton-pipelines
+
+Tutorial:
+https://github.com/openshift/pipelines-tutorial
+
+tkn utility:
+https://github.com/tektoncd/cli/releases/tag/v0.1.2
+
+OpenShift Tasks:
+https://github.com/openshift/pipelines-catalog, s2i-nodejs
+
+
+Pipeline Lab Start
+oc new-project rhte-pipeline
+
+Create the NodeJS task:
+oc create -f https://raw.githubusercontent.com/openshift/pipelines-catalog/master/s2i-nodejs/s2i-nodejs-task.yaml
+Create the OpenShift CLI Task:
+oc create -f https://raw.githubusercontent.com/tektoncd/catalog/master/openshift-client/openshift-client-task.yaml
+
+////
+FYI Build a Skopeo Task:
+sudo -i
+yum -y install podman skopeo buildah
+mkdir skopeo-task
+cd skopeo-task
+
+Create script.sh
+----
+#!/bin/bash
+
+set -e
+
+command="/usr/bin/skopeo"
+
+for args in "$@"; do
+    for arg in $args; do
+        command+=" $arg"
+    done
+done
+
+exec $command
+
+exit 0
+----
+
+Create Dockerfile
+----
+FROM fedora:30
+
+RUN dnf -y update \
+  && dnf install -y skopeo \
+  && dnf clean all
+
+ADD script.sh /usr/local/bin/skopeo
+RUN chmod 775 /usr/local/bin/skopeo
+
+ENTRYPOINT ["/usr/local/bin/skopeo"]
+
+CMD ["help"]
+----
+
+Build skopeo task image
+----
+podman login quay.io # with an account that can push to gpte-devops-automation
+buildah build-using-dockerfile -t quay.io/gpte-devops-automation/tekton-skopeo:0.1 .
+podman push quay.io/gpte-devops-automation/tekton-skopeo:0.1
+exit # from the root shell
+----
+Log into quay.io and make the repository public
+////
+
+Log into Quay
+Create a repository called rhte-app and make it public
+Create a robot account (name it tekton). Retrieve the robot account name and token.
+
+Create Directory to hold all our pipeline YAML files
+mkdir pipeline
+cd pipeline
+
+Create the secret to access Quay
+----
+export QUAY_ACCOUNT=< Quay Account >
+export QUAY_TOKEN=< Quay Token >
+
+cat << EOF >$HOME/pipeline/quay-secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: quay-credentials
+  annotations:
+    tekton.dev/docker-0: https://quay.io
+type: kubernetes.io/basic-auth
+stringData:
+  # Create Robot Account with Write Permissions at https://quay.io
+  username: $QUAY_ACCOUNT
+  password: $QUAY_TOKEN
+EOF
+----
+
+Create the secret:
+oc create -f $HOME/pipeline/quay-secret.yaml
+
+# Create Service Account for use in pipelines
+----
+cat << EOF >$HOME/pipeline/pipeline-serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pipeline
+secrets:
+  - name: quay-credentials
+EOF
+----
+oc create -f pipeline-serviceaccount.yaml -n rhte-pipeline
+oc adm policy add-scc-to-user privileged -z pipeline -n rhte-pipeline
+oc adm policy add-role-to-user edit -z pipeline -n rhte-pipeline
+# add permissions to manipulate the rhte-app object
+oc adm policy add-role-to-user edit system:serviceaccount:rhte-pipeline:pipeline -n rhte-app
+
+# And make it cluster admin because of the Federated Deployment type
+oc adm policy add-cluster-role-to-user cluster-admin system:serviceaccount:rhte-pipeline:pipeline
+
+# This may or may not be necessary. Try next time without it and see if if works (edit might be enough, had wrong project before)
+oc policy add-role-to-user system:image-pusher system:serviceaccount:rhte-pipeline:pipeline -n rhte-app
+
+Register skopeo task:
+
+skopeo-task.yaml
+----
+cat << EOF >$HOME/pipeline/task-skopeo.yaml
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: skopeo
+spec:
+  inputs:
+    params:
+    - name: ARGS
+      description: The skopeo CLI arguments to run
+      default: --help
+  steps:
+  - name: skopeo
+    image: quay.io/gpte-devops-automation/tekton-skopeo:0.1
+    command: ["/usr/local/bin/skopeo"]
+    args:
+      - "\${inputs.params.ARGS}"
+EOF
+----
+oc create -f $HOME/pipeline/task-skopeo.yaml
+
+
+Create the Inputs for the pipeline
+
+Pipeline Resources:
+rhte-git
+----
+cat << EOF >$HOME/pipeline/rhte-git.yaml
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  name: rhte-git
+spec:
+  type: git
+  params:
+  - name: url
+    value: https://github.com/wkulhanek/rhte-app.git
+EOF
+----
+
+rhte-image
+----
+cat << EOF >$HOME/pipeline/rhte-image.yaml
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  name: rhte-image
+spec:
+  type: image
+  params:
+  - name: url
+    value: image-registry.openshift-image-registry.svc:5000/rhte-app/rhte-app:latest
+EOF
+----
+
+Create TaskRun to test NodeJS Build:
+----
+cat << EOF >$HOME/pipeline/taskrun-1-s2i-build.yaml
+apiVersion: tekton.dev/v1alpha1
+kind: TaskRun
+metadata:
+  name: s2i-nodejs
+spec:
+  # Use service account with git and image repo credentials
+  serviceAccount: pipeline
+  taskRef:
+    name: s2i-nodejs
+  inputs:
+    resources:
+    - name: source
+      resourceRef:
+        name: rhte-git
+    params:
+    - name: TLSVERIFY
+      value: "false"
+  outputs:
+    resources:
+    - name: image
+      resourceRef:
+        name: rhte-image
+EOF
+----
+
+oc create -f $HOME/pipeline/taskrun-1-s2i-build.yaml
+Follow along the build:
+tkn taskrun logs -f s2i-nodejs
+Validate the Image got built:
+oc get is -n rhte-app
+
+Create TaskRun to test Image Tagging:
+----
+export TAG=1.0
+cat << EOF >$HOME/pipeline/taskrun-2-tag-image.yaml
+apiVersion: tekton.dev/v1alpha1
+kind: TaskRun
+metadata:
+  name: tag-image
+spec:
+  # Use service account with git and image repo credentials
+  serviceAccount: pipeline
+  taskRef:
+    name: openshift-client
+  inputs:
+    params:
+    - name: ARGS
+      value: "tag rhte-app:latest rhte-app:$TAG -n rhte-app"
+EOF
+----
+
+oc create -f $HOME/pipeline/taskrun-2-tag-image.yaml
+Follow along the build:
+tkn taskrun logs -f tag-image
+Validate the Image got the new tag:
+oc get is -n rhte-app
+
+Create TaskRun to test using skopeo to copy the image to Quay:
+----
+export TAG=1.0
+export QUAY_USER=wkulhanek
+cat << EOF >$HOME/pipeline/taskrun-3-skopeo.yaml
+apiVersion: tekton.dev/v1alpha1
+kind: TaskRun
+metadata:
+  name: copy-to-quay
+spec:
+  # Use service account with git and image repo credentials
+  serviceAccount: pipeline
+  taskRef:
+    name: skopeo
+  inputs:
+    params:
+    - name: ARGS
+      value: "copy --src-tls-verify=false docker://image-registry.openshift-image-registry.svc:5000/rhte-app/rhte-app:$TAG docker://quay.io/$QUAY_USER/rhte-app:$TAG"
+EOF
+----
+
+oc create -f $HOME/pipeline/taskrun-3-skopeo.yaml
+Follow along the build:
+tkn taskrun logs -f copy-to-quay
+
+In Quay.io validate your image is there and has tag 1.0
+
+Create a Task to set the image using patch
+----
+cat << EOF >$HOME/pipeline/task-patch.yaml
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: patch
+spec:
+  inputs:
+    params:
+      - name: RESOURCE
+        description: The resource (e.g. deployment, federateddeployment, ...) to updated
+      - name: RESOURCE_NAME
+        description: The name of the resource to be patched
+      - name: NAMESPACE
+        description: The Namespace that has the Federated Deployment
+      - name: PATCH
+        description: The patch string to use
+      - name: TYPE
+        description: The type of patch
+        default: strategic
+  steps:
+    - name: patch
+      image: quay.io/openshift-pipeline/openshift-cli:latest
+      command: ['/usr/local/bin/oc-origin', 'patch', '${inputs.params.RESOURCE}', '${inputs.params.RESOURCE_NAME}', '-n', '${inputs.params.NAMESPACE}', '--type', '${inputs.params.TYPE}', '--patch', '${inputs.params.PATCH}']
+EOF
+----
+
+Create the Task:
+oc create -f $HOME/pipeline/task-patch.yaml
+
+Create TaskRun to test updating the container image in the Federated Deployment:
+----
+export TAG=1.0
+export QUAY_USER=wkulhanek
+
+cat << EOF >$HOME/pipeline/taskrun-4-set-image.yaml
+apiVersion: tekton.dev/v1alpha1
+kind: TaskRun
+metadata:
+  name: set-image
+spec:
+  # Use service account with git and image repo credentials
+  serviceAccount: pipeline
+  taskRef:
+    name: patch
+  inputs:
+    params:
+    - name: RESOURCE
+      value: FederatedDeployment
+    - name: RESOURCE_NAME
+      value: rhte-app
+    - name: NAMESPACE
+      value: rhte-app
+    - name: TYPE
+      value: merge
+    - name: PATCH
+      value: '{"spec":{"template":{"spec":{"template":{"spec":{"containers":[{"env":[{"name":"CLUSTER_NAME","value":"TBD"},{"name":"IMAGE_TAG","value":"$TAG"},{"name":"PREFIX","value":"TBD"}],"image":"quay.io/$QUAY_USER/rhte-app:$TAG","name":"rhte-app", "ports":[{"containerPort":3000}]}]}}}}}}'
+EOF
+----
+
+oc create -f $HOME/pipeline/taskrun-4-set-image.yaml
+Follow along the build:
+tkn taskrun logs -f set-image
+Validate the Federated Deployment got the new image:
+oc describe federateddeployment rhte-app -n rhte-app
+Validate the Deployment got the new image:
+oc describe deployment rhte-app -n rhte-app
+
+This concludes the setup of all the tasks and task tests. We are now ready to define our pipeline
+
+rhte-pipeline.yaml
+----
+export TAG=2.0
+export QUAY_USER=wkulhanek
+
+cat << EOF >$HOME/pipeline/rhte-pipeline.yaml
+apiVersion: tekton.dev/v1alpha1
+kind: Pipeline
+metadata:
+  name: rhte-pipeline
+spec:
+  resources:
+  - name: app-repository
+    type: git
+  - name: app-image
+    type: image
+  tasks:
+  - name: build
+    taskRef:
+      name: s2i-nodejs
+    params:
+      - name: TLSVERIFY
+        value: "false"
+    resources:
+      inputs:
+      - name: source
+        resource: app-repository
+      outputs:
+      - name: image
+        resource: app-image
+  - name: tag-image
+    taskRef:
+      name: openshift-client
+    runAfter:
+      - build
+    params:
+    - name: ARGS
+      value: "tag rhte-app:latest rhte-app:$TAG -n rhte-app"
+  - name: copy-image
+    taskRef:
+      name: skopeo
+    runAfter:
+      - tag-image
+    params:
+    - name: ARGS
+      value: "copy --src-tls-verify=false docker://image-registry.openshift-image-registry.svc:5000/rhte-app/rhte-app:$TAG docker://quay.io/$QUAY_USER/rhte-app:$TAG"
+  - name: deploy-image
+    taskRef:
+      name: patch
+    runAfter:
+      - copy-image
+    params:
+    - name: RESOURCE
+      value: FederatedDeployment
+    - name: RESOURCE_NAME
+      value: rhte-app
+    - name: NAMESPACE
+      value: rhte-app
+    - name: TYPE
+      value: merge
+    - name: PATCH
+      value: '{"spec":{"template":{"spec":{"template":{"spec":{"containers":[{"env":[{"name":"CLUSTER_NAME","value":"TBD"},{"name":"IMAGE_TAG","value":"$TAG"},{"name":"PREFIX","value":"TBD"}],"image":"quay.io/$QUAY_USER/rhte-app:$TAG","name":"rhte-app", "ports":[{"containerPort":3000}]}]}}}}}}'
+EOF
+----
+
+Create the pipeline:
+oc create -f $HOME/pipeline/rhte-pipeline.yaml
+
+Now create the Pipelinerun definition:
+
+rhte-pipelinerun.yaml
+----
+cat << EOF >$HOME/pipeline/rhte-pipelinerun.yaml
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineRun
+metadata:
+  generateName: rhte-pipelinerun-
+spec:
+  pipelineRef:
+    name: rhte-pipeline
+  trigger:
+    type: manual
+  serviceAccount: 'pipeline'
+  resources:
+  - name: app-repository
+    resourceRef:
+      name: rhte-git
+  - name: app-image
+    resourceRef:
+      name: rhte-image
+EOF
+----
+
+Create the pipelinerun:
+oc create -f $HOME/pipeline/rhte-pipelinerun.yaml
+
+List all the pipeline runs
+tkn pr list
+
+Find the pipelinerun name and tail the logs (e.g.)
+tkn pr logs -f rhte-pipelinerun-8kbbr
+
+Double check the app in both clusters using the route.
+
+This is it. The pipeline is running and updates the image (and Deployments) to tag 2.0

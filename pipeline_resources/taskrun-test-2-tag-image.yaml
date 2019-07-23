@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1alpha1
 kind: TaskRun
 metadata:
-  name: deploy-dc
+  name: tag-image
 spec:
   # Use service account with git and image repo credentials
   serviceAccount: pipeline
@@ -10,4 +10,4 @@ spec:
   inputs:
     params:
     - name: ARGS
-      value: "rollout latest rhte-app"
+      value: "tag rhte-app:latest rhte-app:1.0 -n rhte-app"

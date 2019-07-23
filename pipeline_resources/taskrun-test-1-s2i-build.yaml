@@ -10,19 +10,13 @@ spec:
   inputs:
     resources:
     - name: source
-      resourceSpec:
-        type: git
-        params:
-        - name: url
-          value: https://github.com/wkulhanek/rhte-app.git
+      resourceRef:
+        name: rhte-git
     params:
     - name: TLSVERIFY
       value: "false"
   outputs:
     resources:
     - name: image
-      resourceSpec:
-        type: image
-        params:
-        - name: url
-          value: image-registry.openshift-image-registry.svc:5000/1d1a-rhte-app-dev/rhte-app:latest
+      resourceRef:
+        name: rhte-image

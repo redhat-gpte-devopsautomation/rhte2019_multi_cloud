@@ -10,4 +10,4 @@ spec:
   inputs:
     params:
     - name: ARGS
-      value: "copy --src-tls-verify=false docker://image-registry.openshift-image-registry.svc:5000/1d1a-rhte-app-dev/rhte-app:test docker://quay.io/wkulhanek/rhte-app:test"
+      value: "copy --src-tls-verify=false docker://image-registry.openshift-image-registry.svc:5000/rhte-app/rhte-app:1.0 docker://quay.io/wkulhanek/rhte-app:1.0"

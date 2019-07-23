@@ -1,0 +1,21 @@
+apiVersion: tekton.dev/v1alpha1
+kind: TaskRun
+metadata:
+  name: set-image
+spec:
+  # Use service account with git and image repo credentials
+  serviceAccount: pipeline
+  taskRef:
+    name: patch
+  inputs:
+    params:
+    - name: RESOURCE
+      value: FederatedDeployment
+    - name: RESOURCE_NAME
+      value: rhte-app
+    - name: NAMESPACE
+      value: rhte-app
+    - name: TYPE
+      value: merge
+    - name: PATCH
+      value: '{"spec":{"template":{"spec":{"template":{"spec":{"containers":[{"env":[{"name":"CLUSTER_NAME","value":"TBD"},{"name":"IMAGE_TAG","value":"1.0"},{"name":"PREFIX","value":"TBD"}],"image":"quay.io/wkulhanek/rhte-app:1.0","name":"rhte-app", "ports":[{"containerPort":3000}]}]}}}}}}'

@@ -1,0 +1,16 @@
+apiVersion: types.kubefed.k8s.io/v1beta1
+kind: FederatedService
+metadata:
+  name: rhte-app
+spec:
+  template:
+    spec:
+      selector:
+        name: rhte-app
+      ports:
+        - name: http
+          port: 3000
+  placement:
+    clusters:
+    - name: cluster1
+    - name: cluster2

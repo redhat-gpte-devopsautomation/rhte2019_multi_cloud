@@ -1,0 +1,28 @@
+apiVersion: types.kubefed.k8s.io/v1beta1
+kind: FederatedIngress
+metadata:
+  name: rhte-app
+spec:
+  template:
+    spec:
+      rules:
+      - host: rhte-app
+        http:
+          paths:
+          - path: /
+            backend:
+              serviceName: rhte-app
+              servicePort: 3000
+  placement:
+    clusters:
+    - name: cluster1
+    - name: cluster2
+  overrides:
+  - clusterName: cluster1
+    clusterOverrides:
+    - path: /spec/rules/0/host
+      value: rhte-app-rhte-app.apps.$CLUSTER1
+  - clusterName: cluster2
+    clusterOverrides:
+    - path: /spec/rules/0/host
+      value: rhte-app-rhte-app.apps.$CLUSTER2
