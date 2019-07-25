@@ -25,13 +25,13 @@ Log into Cluster 1 Bastion VM
 ssh student@bastion.min1.example.opentlc.com
 
 export GUID1=min1
-export GUID2=min2
+export GUID2=shared
 
 export CLUSTER1=cluster-$GUID1.$GUID1.example.opentlc.com
 export CLUSTER2=cluster-$GUID2.$GUID2.example.opentlc.com
 
 Use a cluster admin user (user1 is a cluster-admin in our clusters)
-oc login -u user1 -p r3dh4t1! https://api.${CLUSTER1}:6443
+oc login -u admin -p rhte2019 https://api.${CLUSTER1}:6443
 oc project default
 
 # Validate Context:
@@ -127,7 +127,7 @@ spec:
     - path: /spec/template/spec/containers/0/env/0/value
       value: "Cluster 2"
     - path: /spec/template/spec/containers/0/env/2/value
-      value: $GUID2
+      value: "shared"
 EOF
 ----
 
@@ -238,7 +238,7 @@ Installation Instructions (install into project tekton-pipelines):
 https://github.com/openshift/pipelines-tutorial/blob/master/install-operator.md
 
 Install Dashboard:
-oc process https://raw.githubusercontent.com/tektoncd/dashboard/master/config/templates/deploy.yaml | oc apply -f -
+oc process https://raw.githubusercontent.com/tektoncd/dashboard/master/config/templates/deploy.yaml  | oc apply -n openshift-pipelines -f -
 oc process https://raw.githubusercontent.com/tektoncd/dashboard/master/config/templates/build.yaml | oc apply -f -
 oc expose svc tekton-dashboard -n tekton-pipelines
 oc get route -n tekton-pipelines
@@ -390,7 +390,7 @@ spec:
       - "\${inputs.params.ARGS}"
 EOF
 ----
-oc create -f $HOME/pipeline/task-skopeo.yaml
+oc create -f $HOME/pipeline/task-skopeo.yaml -n rhte-pipeline
 
 
 Create the Inputs for the pipeline
@@ -523,26 +523,26 @@ metadata:
 spec:
   inputs:
     params:
-      - name: RESOURCE
-        description: The resource (e.g. deployment, federateddeployment, ...) to updated
-      - name: RESOURCE_NAME
-        description: The name of the resource to be patched
-      - name: NAMESPACE
-        description: The Namespace that has the Federated Deployment
-      - name: PATCH
-        description: The patch string to use
-      - name: TYPE
-        description: The type of patch
-        default: strategic
+    - name: RESOURCE
+      description: The resource (e.g. deployment, federateddeployment, ...) to updated
+    - name: RESOURCE_NAME
+      description: The name of the resource to be patched
+    - name: NAMESPACE
+      description: The Namespace that has the Federated Deployment
+    - name: PATCH
+      description: The patch string to use
+    - name: TYPE
+      description: The type of patch
+      default: strategic
   steps:
-    - name: patch
-      image: quay.io/openshift-pipeline/openshift-cli:latest
-      command: ['/usr/local/bin/oc-origin', 'patch', '${inputs.params.RESOURCE}', '${inputs.params.RESOURCE_NAME}', '-n', '${inputs.params.NAMESPACE}', '--type', '${inputs.params.TYPE}', '--patch', '${inputs.params.PATCH}']
+  - name: patch
+    image: quay.io/openshift-pipeline/openshift-cli:latest
+    command: ['/usr/local/bin/oc-origin', 'patch', '${inputs.params.RESOURCE}', '${inputs.params.RESOURCE_NAME}', '-n', '${inputs.params.NAMESPACE}', '--type', '${inputs.params.TYPE}', '--patch', '${inputs.params.PATCH}']
 EOF
 ----
 
 Create the Task:
-oc create -f $HOME/pipeline/task-patch.yaml
+oc create -f $HOME/pipeline/task-patch.yaml -n rhte-pipeline
 
 Create TaskRun to test updating the container image in the Federated Deployment:
 ----
