@@ -1538,6 +1538,7 @@ oc describe deployment rhte-app -n rhte-app-$CLUSTER2_USER|grep -i image
 *Congratulations!* You made it all the way to the end of this lab.
 
 In this lab you
+
 * Set up a Federated Cluster consisting of two OpenShift Clusters.
 * Deployed an application to two clusters using *KubeFed V2*.
 * Used *OpenShift Pipelines* to build an updated container image for the application and re-deploy it to both clusters using KubeFed V2 and the Quay image registry.
