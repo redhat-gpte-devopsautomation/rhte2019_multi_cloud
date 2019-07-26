@@ -524,11 +524,11 @@ spec:
   - clusterName: cluster1
     clusterOverrides:
     - path: /spec/rules/0/host
-      value: rhte-app-$CLUSTER2_USER-rhte-app.apps.$CLUSTER1
+      value: rhte-app-$CLUSTER2_USER.apps.$CLUSTER1
   - clusterName: cluster2
     clusterOverrides:
     - path: /spec/rules/0/host
-      value: rhte-app-$CLUSTER2_USER-rhte-app.apps.$CLUSTER2
+      value: rhte-app-$CLUSTER2_USER.apps.$CLUSTER2
 EOF
 ----
 
@@ -560,14 +560,14 @@ oc get ingresses,routes
 .Sample Output
 [source,texinfo,options=nowrap]
 ----
-NAME                          HOSTS                                                                 ADDRESS   PORTS   AGE
-ingress.extensions/rhte-app   rhte-app-user10-rhte-app.apps.cluster-min1.min1.example.opentlc.com             80      39s
+NAME                          HOSTS                                                        ADDRESS   PORTS   AGE
+ingress.extensions/rhte-app   rhte-app-user10.apps.cluster-min1.min1.example.opentlc.com             80      39s
 
-NAME                                      HOST/PORT                                                             PATH   SERVICES   PORT   TERMINATION   WILDCARD
-route.route.openshift.io/rhte-app-vn6rp   rhte-app-user10-rhte-app.apps.cluster-min1.min1.example.opentlc.com   /      rhte-app   3000                 None
+NAME                                      HOST/PORT                                                    PATH   SERVICES   PORT   TERMINATION   WILDCARD
+route.route.openshift.io/rhte-app-vn6rp   rhte-app-user10.apps.cluster-min1.min1.example.opentlc.com   /      rhte-app   3000                 None
 ----
 
-. In a browser window navigate to the route displayed (in the example above "rhte-app-rhte-app.apps.cluster-min1.min1.example.opentlc.com") and validate that the application works and does not tell you which cluster it is running on.
+. In a browser window navigate to the route displayed (in the example above "rhte-app-user10.apps.cluster-min1.min1.example.opentlc.com") and validate that the application works and does not tell you which cluster it is running on.
 
 . As a final step validate that the application is running in the second cluster as well.
 +
@@ -599,11 +599,11 @@ deployment.apps/rhte-app   1/1     1            1           3m21s
 NAME                                  DESIRED   CURRENT   READY   AGE
 replicaset.apps/rhte-app-7ff8d9dc8c   1         1         1       3m21s
 
-NAME                                      HOST/PORT                                                                 PATH   SERVICES   PORT   TERMINATION   WILDCARD
-route.route.openshift.io/rhte-app-wrptd   rhte-app-user10-rhte-app.apps.cluster-shared.shared.example.opentlc.com   /      rhte-app   3000                 None
+NAME                                      HOST/PORT                                                        PATH   SERVICES   PORT   TERMINATION   WILDCARD
+route.route.openshift.io/rhte-app-wrptd   rhte-app-user10.apps.cluster-shared.shared.example.opentlc.com   /      rhte-app   3000                 None
 
-NAME                          HOSTS                                                                     ADDRESS   PORTS   AGE
-ingress.extensions/rhte-app   rhte-app-user10-rhte-app.apps.cluster-shared.shared.example.opentlc.com             80      2m
+NAME                          HOSTS                                                            ADDRESS   PORTS   AGE
+ingress.extensions/rhte-app   rhte-app-user10.apps.cluster-shared.shared.example.opentlc.com             80      2m
 ----
 . Notice that all resources are available in cluster 2 as well - and that the route and ingress point to the domain in cluster 2.
 
