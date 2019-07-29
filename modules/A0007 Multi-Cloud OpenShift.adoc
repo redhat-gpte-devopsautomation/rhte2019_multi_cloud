@@ -14,15 +14,15 @@ Only one year later we can now use a lot of Kubernetes / OpenShift technology to
 In this lab you will:
 
 * Set up a Federated Cluster consisting of two OpenShift Clusters.
-* Deploy an application to two clusters using *KubeFed V2*.
-* Use *OpenShift Pipelines* - which are based on _Tekton Pipelines_ - to build an updated container image for the application and re-deploy it to both clusters using KubeFed V2 and the Quay image registry.
+* Deploy an application to two clusters using *KubeFed*.
+* Use *OpenShift Pipelines* - which are based on _Tekton Pipelines_ - to build an updated container image for the application and re-deploy it to both clusters using KubeFed and the Quay image registry.
 
 [WARNING]
-Both KubeFed V2 and OpenShift are Developer Preview at the moment. They can and will change before being released. Also both products currently require a *cluster administrator* account. Hopefully this will change before the final release.
+Both KubeFed and OpenShift are Developer Preview at the moment. They can and will change before being released. Also both products currently require a *cluster administrator* account. Hopefully this will change before the final release.
 
 === Infrastructure
 
-You have one primary cluster where you will be doing all the work. On this cluster you will have cluster-administrator privileges. This cluster already has *KubeFed V2* deployed. Only the source cluster needs KubeFed deployed - all other clusters are managed from the primary cluster. This makes adding clusters to a federated cluster very easy.
+You have one primary cluster where you will be doing all the work. On this cluster you will have cluster-administrator privileges. This cluster already has *KubeFed* deployed. Only the source cluster needs KubeFed deployed - all other clusters are managed from the primary cluster. This makes adding clusters to a federated cluster very easy.
 
 There is a second, shared, cluster for all students to deploy your application to. You do not have cluster-administrator privileges for that cluster.
 
@@ -80,7 +80,7 @@ Using project "default".
 
 == Set up the Federated Cluster
 
-KubeFed V2 requires clusters to be registered. The way this works is that an initial federated cluster is created. Then a second cluster is joined to this initial cluster.
+KubeFed requires clusters to be registered. The way this works is that an initial federated cluster is created. Then a second cluster is joined to this initial cluster.
 
 Once this step has been completed you can create a federated project to deploy your federated application into. KubeFed will take care of distributing the Kubernetes objects that make up thisapplication to every cluster in the federated cluster.
 
@@ -305,8 +305,8 @@ oc describe kubefedcluster cluster2 -n kube-federation-system
 |Original Resource|Federated Resource
 |Namespace|FederatedNamespace
 |Deployment|FederatedDeployment
-|Service|Service
-|Ingress|Ingress
+|Service|FederatedService
+|Ingress|FederatedIngress
 |====
 +
 Once registered the cluster now understands the federated type and if you create a federated resource it is automatically distributed over all clusters.
@@ -1540,5 +1540,5 @@ oc describe deployment rhte-app -n rhte-app-$CLUSTER2_USER|grep -i image
 In this lab you
 
 * Set up a Federated Cluster consisting of two OpenShift Clusters.
-* Deployed an application to two clusters using *KubeFed V2*.
-* Used *OpenShift Pipelines* to build an updated container image for the application and re-deploy it to both clusters using KubeFed V2 and the Quay image registry.
+* Deployed an application to two clusters using *KubeFed*.
+* Used *OpenShift Pipelines* to build an updated container image for the application and re-deploy it to both clusters using KubeFed and the Quay image registry.
