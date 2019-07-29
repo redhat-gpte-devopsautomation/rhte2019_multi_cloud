@@ -1,7 +1,0 @@
-= 2019 RHTE Multi Cloud Lab Setup Environment
-
-This document explains how to set up the environment for the Multi Cloud Lab.
-
-== Prerequisites
-
-TBD
