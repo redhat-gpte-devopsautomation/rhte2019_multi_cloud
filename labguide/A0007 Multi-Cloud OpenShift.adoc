@@ -1007,6 +1007,8 @@ spec:
     params:
     - name: TLSVERIFY
       value: "false"
+    - name: VERSION
+      value: "8"
   outputs:
     resources:
     - name: image
@@ -1329,6 +1331,8 @@ spec:
     params:
       - name: TLSVERIFY
         value: "false"
+      - name: VERSION
+        value: "8"
     resources:
       inputs:
       - name: source
