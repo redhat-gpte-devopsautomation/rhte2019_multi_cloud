@@ -600,7 +600,7 @@ Log back into the second cluster
 +
 [source,sh]
 ----
-oc login -u admin https://api.${CLUSTER2}:6443
+oc config use-context cluster2-${GUID}
 ----
 . Display all resources in the project *rhte-app-${GUID}*. Note that you never created the project in cluster 2 - but by federating the namespace the project got created in cluster 2 as well.
 +
@@ -652,7 +652,7 @@ PREFIX=common
 +
 [source,sh]
 ----
-oc login -u admin https://api.${CLUSTER1}:6443
+oc config use-context cluster1-${GUID}
 ----
 
 Your federated project is now set up and ready to be used in the pipeline.
