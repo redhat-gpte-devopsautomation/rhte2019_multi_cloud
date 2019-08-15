@@ -1,0 +1,246 @@
+= Red Hat Tech Exchange 2019
+
+== A0007 Multi-Cloud OpenShift Lab - Setup Guide
+
+The Red Hat Tech Exchange environments are already pre-configured.
+
+In case you want to run this lab on your own cluster you need to set up KubeFed and OpenShift Pipelines on your cluster. This guide walks you through the process.
+
+=== Set up KubeFed
+
+. Download and install `kubefedctl`
++
+[source,sh]
+----
+sudo ansible --connection=local all -i localhost, -m unarchive -a"src=https://github.com/kubernetes-sigs/kubefed/releases/download/v0.1.0-rc4/kubefedctl-0.1.0-rc4-linux-amd64.tgz remote_src=yes dest=/usr/bin mode=0775 owner=root group=root"
+----
+
+. Log into your OpenShift 4.1 cluster as a `cluster-admin` user (e.g. *system:admin*).
+. Make a directory to store YAML manifests
++
+[source,sh]
+----
+mkdir $HOME/setup
+cd $HOME/setup
+----
+
+. Create the `kube-federation-system` project
++
+[source,sh]
+----
+oc adm new-project kube-federation-system --display-name="KubeFed V2"
+----
+
+. Create the *CatalogSourceConfig* manifest:
++
+[source,sh]
+----
+cat << EOF >$HOME/setup/kubefed_csc.yaml
+apiVersion: operators.coreos.com/v1
+kind: CatalogSourceConfig
+metadata:
+  name: "installed-kubefed"
+  namespace: openshift-marketplace
+spec:
+  csDisplayName: Community Operators
+  csPublisher: Community
+  targetNamespace: "kube-federation-system"
+  packages: kubefed-operator
+EOF
+----
+
+. Create the *OperatorGroup* manifest:
++
+[source,sh]
+----
+cat << EOF >$HOME/setup/kubefed_og.yaml
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: kubefed-group
+  namespace: "kube-federation-system"
+spec:
+  targetNamespaces:
+  - "kube-federation-system"
+EOF
+----
+
+. Create the *Subscription* manifest:
++
+[source,sh]
+----
+cat << EOF >$HOME/setup/kubefed_sub.yaml
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: kubefed-operator
+  namespace: "kube-federation-system"
+spec:
+  channel: alpha
+  installPlanApproval: Manual
+  name: kubefed-operator
+  source: "installed-kubefed"
+  sourceNamespace: "kube-federation-system"
+  startingCSV: "kubefed-operator.v0.1.0"
+EOF
+----
+
+. Create the *KubeFed* manifest:
++
+[source,sh]
+----
+cat << EOF >$HOME/setup/kubefed.yaml
+apiVersion: operator.kubefed.io/v1alpha1
+kind: KubeFed
+metadata:
+  name: kubefed
+  namespace: "kube-federation-system"
+spec: 
+  scope: Cluster
+EOF
+----
+
+. Create the objects in OpenShift
++
+[source,sh]
+----
+oc create -f $HOME/setup/kubefed_csc.yaml
+oc create -f $HOME/setup/kubefed_og.yaml
+oc create -f $HOME/setup/kubefed_sub.yaml
+----
+
+. Wait until the *InstallPlan* has been created (repeat this command until it returns a value):
++
+[source,sh]
+----
+oc get installplan -o name -n kube-federation-system | awk -F "/" '{print $2}'
+----
++
+.Sample Output
+[source,texinfo]
+----
+install-ddvmb
+----
+
+. Approve the InstallPlan
++
+[source,sh]
+----
+oc patch installplan $(oc get installplan -o name -n kube-federation-system | awk -F "/" '{print $2}') --type merge -p '{"spec":{"approved":true}}' -n kube-federation-system
+----
+
+. Wait until the ClusterServiceVersion is deployed successfully (repeat the following command until it returns *Succeeded*)
++
+[source,sh]
+----
+oc get csv kubefed-operator.v0.1.0 -o jsonpath='{.status.phase}' -n kube-federation-system
+----
+
+. Create the KubeFed object in OpenShift
++
+[source,sh]
+----
+oc create -f $HOME/setup/kubefed.yaml
+----
+
+. Federate the API Types you will use in the lab.
++
+[source,sh]
+----
+kubefedctl enable namespaces --kubefed-namespace kube-federation-system
+kubefedctl enable deployments.apps --kubefed-namespace kube-federation-system
+kubefedctl enable ingresses.extensions --kubefed-namespace kube-federation-system
+kubefedctl enable services --kubefed-namespace kube-federation-system
+kubefedctl enable routes --kubefed-namespace kube-federation-system
+----
+
+=== Set up OpenShift Pipelines
+
+. Download and install `tkn`
++
+[source,sh]
+----
+sudo ansible --connection=local all -i localhost, -m unarchive -a"src=https://github.com/tektoncd/cli/releases/download/v0.2.2/tkn_0.2.2_Linux_x86_64.tar.gz remote_src=yes dest=/usr/bin mode=0775 owner=root group=root"
+----
+
+. Create the `openshift-pipelines` project
++
+[source,sh]
+----
+oc adm new-project openshift-pipelines --display-name="OpenShift (Tekton) Pipelines"
+----
+
+. Create the *CatalogSourceConfig* manifest:
++
+[source,sh]
+----
+cat << EOF >$HOME/setup/pipelines_csc.yaml
+apiVersion: operators.coreos.com/v1
+kind: CatalogSourceConfig
+metadata:
+  name: "installed-openshift-pipelines"
+  namespace: openshift-marketplace
+spec:
+  csDisplayName: Community Operators
+  csPublisher: Community
+  targetNamespace: openshift-operators
+  packages: openshift-pipelines-operator
+EOF
+----
+
+. Create the *Subscription* manifest:
++
+[source,sh]
+----
+cat << EOF >$HOME/setup/pipelines_sub.yaml
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: openshift-pipelines-operator
+  namespace: openshift-operators
+spec:
+  channel: dev-preview
+  installPlanApproval: Automatic
+  name: openshift-pipelines-operator
+  source: installed-openshift-pipelines
+  sourceNamespace: openshift-operators
+EOF
+----
+
+. Create the *Pipeline* manifest:
++
+[source,sh]
+----
+cat << EOF >$HOME/setup/pipelines.yaml
+apiVersion: operator.tekton.dev/v1alpha1
+kind: Config
+metadata:
+  name: cluster
+spec:
+  targetNamespace: openshift-operators
+EOF
+----
+
+. Create the objects in OpenShift
++
+[source,sh]
+----
+oc create -f $HOME/setup/pipelines_csc.yaml
+oc create -f $HOME/setup/pipelines_sub.yaml
+----
+
+. Wait until the ClusterServiceVersion is deployed successfully (repeat the following command until PHASE is *Succeeded*)
++
+[source,sh]
+----
+oc get csv openshift-pipelines-operator.v0.5.2 -n openshift-operators
+----
+
+. Create the Pipelines object in OpenShift
++
+[source,sh]
+----
+oc create -f $HOME/setup/pipelines.yaml
+----
+
+. You are now ready to run the lab.
