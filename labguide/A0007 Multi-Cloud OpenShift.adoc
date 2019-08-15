@@ -82,7 +82,7 @@ echo "export CLUSTER2=cluster-common.common.events.opentlc.com" >>$HOME/.bashrc
 +
 [source,sh]
 ----
-oc login -u admin -p rhte2019 https://api.${CLUSTER1}:6443
+oc login -u admin -p rhte2019 --insecure-skip-tls-verify https://api.${CLUSTER1}:6443
 ----
 +
 .Sample Output
@@ -150,7 +150,7 @@ Do not run any commands not listed in this lab on cluster 2 - this is a shared c
 +
 [source,sh]
 ----
-oc login -u admin -p rhte2019 https://api.${CLUSTER2}:6443
+oc login -u admin -p rhte2019 --insecure-skip-tls-verify https://api.${CLUSTER2}:6443
 ----
 
 . Now that you are logged into the second cluster your *local* kube config file in the cluster 1 bastion VM has been updated with the context for cluster 2.
@@ -372,8 +372,8 @@ kubefedctl federate namespace rhte-app-${GUID}
 .Sample Output
 [source,texinfo,options=nowrap]
 ----
-I0813 23:38:13.143331   26530 federate.go:451] Resource to federate is a namespace. Given namespace will itself be the container for the federated namespace
-I0813 23:38:13.147687   26530 federate.go:480] Successfully created FederatedNamespace "rhte-app-user99/rhte-app-user99" from Namespace
+I0815 00:22:52.983400   28879 federate.go:459] Resource to federate is a namespace. Given namespace will itself be the container for the federated namespace
+I0815 00:22:52.988064   28879 federate.go:488] Successfully created FederatedNamespace "rhte-app-b1fa/rhte-app-b1fa" from Namespace
 ----
 +
 You could have also created the FederatedNamespace from a YAML definition. That way you wouldn't have needed to first create the project and then federate it. In the next few steps you will use the YAML approach. Using `kubefedctl federate` is a convenient way to federate resources that already exist.
@@ -425,16 +425,16 @@ spec:
               value: "To be overwritten"
   placement:
     clusters:
-    - name: cluster1
-    - name: cluster2
+    - name: cluster1-${GUID}
+    - name: cluster2-${GUID}
   overrides:
-  - clusterName: cluster1
+  - clusterName: cluster1-${GUID}
     clusterOverrides:
     - path: /spec/template/spec/containers/0/env/0/value
       value: "Cluster 1"
     - path: /spec/template/spec/containers/0/env/2/value
       value: $GUID
-  - clusterName: cluster2
+  - clusterName: cluster2-${GUID}
     clusterOverrides:
     - path: /spec/template/spec/containers/0/env/0/value
       value: "Cluster 2"
@@ -468,17 +468,17 @@ federateddeployment.types.kubefed.k8s.io/rhte-app created
 +
 [source,sh]
 ----
-oc get federateddeployments,deployments
+oc get federateddeployments,deployments -n rhte-app-${GUID}
 ----
 +
 .Sample Output
 [source,texinfo]
 ----
 NAME                                                AGE
-federateddeployment.types.kubefed.k8s.io/rhte-app   41s
+federateddeployment.types.kubefed.k8s.io/rhte-app   97s
 
 NAME                             READY   UP-TO-DATE   AVAILABLE   AGE
-deployment.extensions/rhte-app   1/1     1            1           41s
+deployment.extensions/rhte-app   1/1     1            1           97s
 ----
 
 . An application needs the networking resources to be accessible. Create the definition for the federated service.
@@ -500,8 +500,8 @@ spec:
           port: 3000
   placement:
     clusters:
-    - name: cluster1
-    - name: cluster2
+    - name: cluster1-${GUID}
+    - name: cluster2-${GUID}
 EOF
 ----
 
@@ -543,14 +543,14 @@ spec:
               servicePort: 3000
   placement:
     clusters:
-    - name: cluster1
-    - name: cluster2
+    - name: cluster1-${GUID}
+    - name: cluster2-${GUID}
   overrides:
-  - clusterName: cluster1
+  - clusterName: cluster1-${GUID}
     clusterOverrides:
     - path: /spec/rules/0/host
       value: rhte-app-${GUID}.apps.${CLUSTER1}
-  - clusterName: cluster2
+  - clusterName: cluster2-${GUID}
     clusterOverrides:
     - path: /spec/rules/0/host
       value: rhte-app-${GUID}.apps.${CLUSTER2}
@@ -579,20 +579,20 @@ federatedingress.types.kubefed.k8s.io/rhte-app created
 +
 [source,sh]
 ----
-oc get ingresses,routes
+oc get ingresses,routes -n rhte-app-${GUID}
 ----
 +
 .Sample Output
 [source,texinfo,options=nowrap]
 ----
-NAME                          HOSTS                                                           ADDRESS   PORTS   AGE
-ingress.extensions/rhte-app   rhte-app-user99.apps.cluster-702d.702d.sandbox318.opentlc.com             80      8s
+NAME                          HOSTS                                                        ADDRESS   PORTS   AGE
+ingress.extensions/rhte-app   rhte-app-b1fa.apps.cluster-b1fa.b1fa.sandbox23.opentlc.com             80      11s
 
-NAME                                      HOST/PORT                                                       PATH   SERVICES   PORT   TERMINATION   WILDCARD
-route.route.openshift.io/rhte-app-59dhh   rhte-app-user99.apps.cluster-702d.702d.sandbox318.opentlc.com   /      rhte-app   3000                 None
+NAME                                      HOST/PORT                                                    PATH   SERVICES   PORT   TERMINATION   WILDCARD
+route.route.openshift.io/rhte-app-jqzv4   rhte-app-b1fa.apps.cluster-b1fa.b1fa.sandbox23.opentlc.com   /      rhte-app   3000                 None
 ----
 
-. In a browser window navigate to the route displayed (in the example above `rhte-app-user99.apps.cluster-702d.702d.sandbox318.opentlc.com`) and validate that the application works and does not tell you which cluster it is running on.
+. In a browser window navigate to the route displayed (in the example above `rhte-app-b1fa.apps.cluster-b1fa.b1fa.sandbox23.opentlc.com`) and validate that the application works and does not tell you which cluster it is running on (you should see "Placeholder for" for all three lines of text).
 
 . As a final step validate that the application is running in the second cluster as well.
 +
@@ -613,22 +613,22 @@ oc get all,ingresses -n rhte-app-${GUID}
 [source,texinfo,options=nowrap]
 ----
 NAME                            READY   STATUS    RESTARTS   AGE
-pod/rhte-app-7ff8d9dc8c-bl7ht   1/1     Running   0          3m21s
+pod/rhte-app-5895bfcf6c-z8pxh   1/1     Running   0          4m22s
 
-NAME               TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
-service/rhte-app   ClusterIP   172.30.94.150   <none>        3000/TCP   2m54s
+NAME               TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)    AGE
+service/rhte-app   ClusterIP   172.30.193.210   <none>        3000/TCP   2m9s
 
 NAME                       READY   UP-TO-DATE   AVAILABLE   AGE
-deployment.apps/rhte-app   1/1     1            1           3m21s
+deployment.apps/rhte-app   1/1     1            1           4m22s
 
 NAME                                  DESIRED   CURRENT   READY   AGE
-replicaset.apps/rhte-app-7ff8d9dc8c   1         1         1       3m21s
+replicaset.apps/rhte-app-5895bfcf6c   1         1         1       4m23s
 
-NAME                                      HOST/PORT                                                        PATH   SERVICES   PORT   TERMINATION   WILDCARD
-route.route.openshift.io/rhte-app-wrptd   rhte-app-user10.apps.cluster-shared.shared.example.opentlc.com   /      rhte-app   3000                 None
+NAME                                      HOST/PORT                                                     PATH   SERVICES   PORT   TERMINATION   WILDCARD
+route.route.openshift.io/rhte-app-zhlmf   rhte-app-b1fa.apps.cluster-common.common.events.opentlc.com   /      rhte-app   3000                 None
 
-NAME                          HOSTS                                                            ADDRESS   PORTS   AGE
-ingress.extensions/rhte-app   rhte-app-user10.apps.cluster-shared.shared.example.opentlc.com             80      2m
+NAME                          HOSTS                                                         ADDRESS   PORTS   AGE
+ingress.extensions/rhte-app   rhte-app-b1fa.apps.cluster-common.common.events.opentlc.com             80      93s
 ----
 . Notice that all resources are available in cluster 2 as well - and that the route and ingress point to the domain in cluster 2.
 
@@ -645,7 +645,7 @@ oc set env deployment rhte-app -n rhte-app-${GUID} --list
 # deployments/rhte-app, container rhte-app
 CLUSTER_NAME=Cluster 2
 IMAGE_TAG=To be overwritten
-PREFIX=shared
+PREFIX=common
 ----
 
 . Log back into Cluster 1
@@ -682,31 +682,32 @@ You will use the Quay registry to hold the container images for your application
 
 If you do not yet have a Quay account you will need to register for a Quay account. If you already have a quay account log into quay, skip this step and go to the next section to create a Quay repository.
 
-. In a web browser navigate to https://quay.io
+. In a web browser navigate to https://quay-common.apps.cluster-common.common.events.opentlc.com
+* This is a private Quay container image registry just for our lab. It is being managed by the Quay Operator (https://github.com/redhat-cop/quay-operator).
 . On the Quay Homepage click *Create Account* (under the login entry fields)
-. Pick a user name, specify your e-mail address and pick a password.
+. Pick a user name, specify your e-mail address (we will not use that for anything) and pick a password. Then click *Create Account*.
 . Your account will be created and you will be logged into Quay.
 
 === Create Quay Repository
 
 You will create a public repository in Quay that you will use to push your container images to.
 
-. Click *+ Create New Repository* link.
+. Click *+ Create New Repository* link (towards the top right of the Qauy web page).
 . Use *rhte-app* as the name of the repository.
-. Make sure to select *Public* for the type of repository. And leave it as an *Empty repository*.
+. Make sure to select *Public* for the type of repository.
 . Then click *Create Public Repository*.
 
 === Create Quay Robot Account
 
-You need credentials to access Quay from the pipeline. It is generally a bad idea to use your own user id and password. But luckily Quay has a mechanism to create a *Robot Account* - which can easily be updated (or revoked) if necessary.
+While your image repository is public you need credentials to access Quay from the pipeline to push images. It is generally a bad idea to use your own user id and password. But luckily Quay has a mechanism to create a *Robot Account* - which can easily be updated (or revoked) if necessary.
 
 . In the Quay Web Interface click your account name in the top right corner, then select *Account Settings*.
-. On the left click the second icon (the one looking like a robot). Then on the right click *+Create Robot Account*.
+. On the left click the second icon from the top (the one looking like a robot). Then on the right click *+Create Robot Account*.
 . In the entry field use *rhte* as the name for the new robot account and optionally add a description. Then click *Create robot account*.
 . When prompted for permissions select the *rhte-app* repository by checking the box to the left of it, and change the *Permission* dropdown to *Write*. Then click *Add Permission*.
-. Note your newly created robot account consisting of your account name and the name of the robot account (e.g. wkulhanek+rhte).
-. Click the little settings icon to the far right of your robot account and select *View Credentials*.
-. Make sure to save both your robot account *Username* (e.g. wkulhanek+rhte) and the *Robot Token* (for example in a text editor). You will need these in the next step.
+. Note your newly created robot account consisting of your account name and the name of the robot account (e.g. `wkulhanek+rhte`).
+. Click the little settings icon to the far right of your robot account (looks like a little wheel) and select *View Credentials*.
+. Make sure to save both your robot account *Username* (e.g. `wkulhanek+rhte`) and the *Robot Token*. It may be a good idea to write them into a text file. You will need these credentials later in the lab.
 . Once you have copied the Username and Token you may close the Quay window.
 
 === Set up the Pipeline Project
@@ -739,7 +740,7 @@ kind: Secret
 metadata:
   name: quay-credentials
   annotations:
-    tekton.dev/docker-0: https://quay.io
+    tekton.dev/docker-0: https://quay-common.apps.cluster-common.common.events.opentlc.com
 type: kubernetes.io/basic-auth
 stringData:
   # Create Robot Account with Write Permissions at https://quay.io
@@ -790,7 +791,9 @@ oc create -f pipeline-serviceaccount.yaml -n rhte-pipeline
 ----
 serviceaccount/pipeline created
 ----
-. Now grant the right permissions to the service account.
+. Now grant the right permissions to the service account. The Service account needs to roles:
+* *privileged*: This is necessary to run builds inside a container.
+* *cluster-admin*: This is necessary for the pipeline to be able to update KubeFed resources. In the future it will be possible to use much more restrictive permissions.
 +
 [source,sh]
 ----
@@ -882,7 +885,7 @@ oc create -f $HOME/pipeline/task-skopeo.yaml -n rhte-pipeline
 task.tekton.dev/skopeo created
 ----
 
-. Finally create a task to patch a resource in OpenShift
+. Finally create a task to patch a resource in OpenShift - the generic OpenShift CLI task does not work for this use case.
 +
 [source,sh]
 ----
@@ -989,7 +992,7 @@ spec:
   type: image
   params:
   - name: url
-    value: image-registry.openshift-image-registry.svc:5000/rhte-app-$CLUSTER2_USER/rhte-app:latest
+    value: image-registry.openshift-image-registry.svc:5000/rhte-app-${GUID}/rhte-app:latest
 EOF
 ----
 . Note that the image is located in the project `rhte-app-CLUSTER2_USER` while the PipelineResource will be created in the `rhte-pipeline` project.
@@ -1082,14 +1085,13 @@ tkn taskrun logs -f s2i-nodejs
 
 [...]
 
-[push] Copying config sha256:a3861d10232496d3eff1fe5024e9a5bf0454b8e3710c6d1d430b0da66e8afac2
+[push] Copying config sha256:60bb55edc1c4b30419be10f546598cb5febadf74a8a5d5dcdec23bc336ce0da5
 [push] Writing manifest to image destination
 [push] Storing signatures
-[push] Successfully pushed //image-registry.openshift-image-registry.svc:5000/rhte-app-user10/rhte-app:latest@sha256:c6434fa736d2a16a3e439e44c33aef1dce4fd1e824782dfe082463404f231dd2
+[push] Successfully pushed //image-registry.openshift-image-registry.svc:5000/rhte-app-b1fa/rhte-app:latest@sha256:a74498ef67641fb066b7e14f6dbdc2fb5d0938f903fa3eaa66ef50fc4ed510ca
 
-[image-digest-exporter-push-b6489] []
-
-[nop] Build successful
+[image-digest-exporter-push-z6pvv] 2019/08/15 00:53:32 ImageResource rhte-image doesn't have an index.json file: stat /builder/home/image-outputs/image/index.json: no such file or directory
+[image-digest-exporter-push-z6pvv] 2019/08/15 00:53:32 Image digest exporter output: []
 ----
 
 .. Validate that the image got built (in the rhte-app project):
@@ -1102,8 +1104,8 @@ oc get is -n rhte-app-${GUID}
 .Sample Output
 [source,texinfo,options=nowrap]
 ----
-NAME       IMAGE REPOSITORY                                                            TAGS     UPDATED
-rhte-app   image-registry.openshift-image-registry.svc:5000/rhte-app-user10/rhte-app   latest   5 minutes ago
+NAME       IMAGE REPOSITORY                                                          TAGS     UPDATED
+rhte-app   image-registry.openshift-image-registry.svc:5000/rhte-app-b1fa/rhte-app   latest   5 minutes ago
 ----
 
 . Second test the Image Tagging task
@@ -1161,14 +1163,14 @@ tkn taskrun logs -f tag-image
 +
 [source,sh]
 ----
-oc get is -n rhte-app-$CLUSTER2_USER
+oc get is -n rhte-app-${GUID}
 ----
 +
 .Sample Output
 [source,texinfo,options=nowrap]
 ----
-NAME       IMAGE REPOSITORY                                                            TAGS         UPDATED
-rhte-app   image-registry.openshift-image-registry.svc:5000/rhte-app-user10/rhte-app   1.0,latest   About a minute ago
+NAME       IMAGE REPOSITORY                                                          TAGS         UPDATED
+rhte-app   image-registry.openshift-image-registry.svc:5000/rhte-app-b1fa/rhte-app   1.0,latest   About a minute ago
 ----
 
 . Third test the Image Copying task
@@ -1191,7 +1193,7 @@ spec:
   inputs:
     params:
     - name: ARGS
-      value: "copy --src-tls-verify=false docker://image-registry.openshift-image-registry.svc:5000/rhte-app-$GUID/rhte-app:$TAG docker://quay.io/$QUAY_USER/rhte-app:$TAG"
+      value: "copy --src-tls-verify=false docker://image-registry.openshift-image-registry.svc:5000/rhte-app-$GUID/rhte-app:$TAG docker://quay-common.apps.cluster-common.common.events.opentlc.com/$QUAY_USER/rhte-app:$TAG"
 EOF
 ----
 
@@ -1220,27 +1222,20 @@ tkn taskrun logs -f copy-to-quay
 [source,texinfo,options=nowrap]
 ----
 [skopeo] Getting image source signatures
-[skopeo] Copying blob sha256:23298c87d19b628f9d1411587551a74b77b4ff8fb233d203b53d109f9c6161cb
-[skopeo] Copying blob sha256:ce5e8da96c0c0f8218991dff0eae5edace4be9788bbf75d9ee38a21d9ac4e838
-[skopeo] Copying blob sha256:86436e1c71cab8e9c82ee50fd4151c4266c1471a84400744fdf4bb29d20974a0
-[skopeo] Copying blob sha256:98ae5ff3ef5449cb2c5186e7f6c965fccbd3381c4efe8877f03f74ca4c6a1b3a
-[skopeo] Copying blob sha256:803551d1873d22e6a5ecd481176574afe07768cf2c42a5016c30d46b3ffc9e11
-[skopeo] Copying blob sha256:52b8c05288da8d6fb365b6cfc325a4f817522e87723e00f71b08f9d77daa3c84
-[skopeo] Copying blob sha256:d54a428f5b1102cbb3d83afa7b57af0d6367e9bcb7d8506e879c17e8e5f32601
-[skopeo] Copying blob sha256:6fc73bf62ca79b67fd8e6a612666365a6f7be3c938ab39c7374ac3e84ecde636
-[skopeo] Copying blob sha256:1bcfbc42d218cd11077d82172c48949e1c32aa870cad89896f016b89994a0725
-[skopeo] Copying blob sha256:6894c1c3a84f2a07bedcc4bd84f54ad37cdbb8e60eeb29c5cd5219af50cc346b
-[skopeo] Copying blob sha256:5ef6c5705f94dc038217ee244740f03b1a59cda9e2ca56409c94ed9adead14a7
-[skopeo] Copying blob sha256:68f35a0e66a69ecc13d2589f2e50e150ef09eb6be34bf1aa8e866d8d8c765c01
-[skopeo] Copying config sha256:a3861d10232496d3eff1fe5024e9a5bf0454b8e3710c6d1d430b0da66e8afac2
-[skopeo] Writing manifest to image destination
+[skopeo] Copying blob sha256:9097e153bf940b0ed05910d703ca5ef049ba48241a397649e24581f8f1eb5bfe
+[skopeo] Copying blob sha256:ee6b95d93e4ec1b3cfe870fbf976bb2f474dcc7a62c21c1c934e3018dc50edb8
+[skopeo] Copying blob sha256:7d6351d37f23b8de7abc715ca89ead935630634f5d418a67e0fb6e81adb13a2c
+[skopeo] Copying blob sha256:92cc4d8eb1ee6ea21a5d28014d853cc2bac191bc3fd4fb9737fa90439eed1c31
+[skopeo] Copying blob sha256:7d0b324847a822ccbbb1fc49a1b0c369f99f934f52bd1b947c4c54dbb6bf38f3
+[skopeo] Copying blob sha256:ba43a96d4c09d7111bae423c69de41a76212f911b647502e1748a8b28b0dc446
+[skopeo] Copying blob sha256:f41df985143af3f5b5728663bb40668f22b9a42b07d7ad568a775e15caeb6f1c
+[skopeo] Copying blob sha256:8edbe0b7b44b861eeee18bfdefbd0a3781fca9b26d8d07bbf5c8767c9b44b49c
+[skopeo] Copying config sha256:60bb55edc1c4b30419be10f546598cb5febadf74a8a5d5dcdec23bc336ce0da5
 [skopeo] Writing manifest to image destination
 [skopeo] Storing signatures
-
-[nop] Build successful
 ----
 
-.. Navigate to https://quay.io again and check that your repository now has an image in it with tag 1.0
+.. In your web browser navigate to https://quay-common.apps.cluster-common.common.events.opentlc.com again and check that your repository now has an image in it with tag 1.0
 
 . Finally test setting the image in the Federated Deployment.
 .. Create the TaskRun definition.
@@ -1271,7 +1266,7 @@ spec:
     - name: TYPE
       value: merge
     - name: PATCH
-      value: '{"spec":{"template":{"spec":{"template":{"spec":{"containers":[{"env":[{"name":"CLUSTER_NAME","value":"TBD"},{"name":"IMAGE_TAG","value":"$TAG"},{"name":"PREFIX","value":"TBD"}],"image":"quay.io/$QUAY_USER/rhte-app:$TAG","name":"rhte-app", "ports":[{"containerPort":3000}]}]}}}}}}'
+      value: '{"spec":{"template":{"spec":{"template":{"spec":{"containers":[{"env":[{"name":"CLUSTER_NAME","value":"TBD"},{"name":"IMAGE_TAG","value":"$TAG"},{"name":"PREFIX","value":"TBD"}],"image":"quay-common.apps.cluster-common.common.events.opentlc.com/$QUAY_USER/rhte-app:$TAG","name":"rhte-app", "ports":[{"containerPort":3000}]}]}}}}}}'
 EOF
 ----
 
@@ -1300,8 +1295,6 @@ tkn taskrun logs -f set-image
 [source,texinfo]
 ----
 [patch] federateddeployment.types.kubefed.k8s.io/rhte-app patched
-
-[nop] Build successful
 ----
 
 .. Validate that the Federated Deployment has updated the deployment with the new image.
@@ -1314,10 +1307,17 @@ oc describe deployment rhte-app -n rhte-app-${GUID}|grep -i image
 .Sample Output
 [source,texinfo,options=nowrap]
 ----
-    Image:      quay.io/wkulhanek/rhte-app:1.0
+    Image:      quay-common.apps.cluster-common.common.events.opentlc.com/wkulhanek/rhte-app:1.0
       IMAGE_TAG:     1.0
 ----
 
+.. Remind yourself of the URL of your application:
++
+[source,sh]
+----
+oc get route -n rhte-app-${GUID}
+----
++
 .. Using the route to your application validate in a web browser that the placeholder application has been replaced with the real application. This application now reads the Environment Variables from the Pod and displays them. You should see the following:
 * You are on Cluster: Cluster 1
 * Image Tag for this application: 1.0
@@ -1381,7 +1381,7 @@ spec:
       - tag-image
     params:
     - name: ARGS
-      value: "copy --src-tls-verify=false docker://image-registry.openshift-image-registry.svc:5000/rhte-app-${GUID}/rhte-app:$TAG docker://quay.io/$QUAY_USER/rhte-app:$TAG"
+      value: "copy --src-tls-verify=false docker://image-registry.openshift-image-registry.svc:5000/rhte-app-${GUID}/rhte-app:$TAG docker://quay-common.apps.cluster-common.common.events.opentlc.com/$QUAY_USER/rhte-app:$TAG"
   - name: deploy-image
     taskRef:
       name: patch
@@ -1397,7 +1397,7 @@ spec:
     - name: TYPE
       value: merge
     - name: PATCH
-      value: '{"spec":{"template":{"spec":{"template":{"spec":{"containers":[{"env":[{"name":"CLUSTER_NAME","value":"TBD"},{"name":"IMAGE_TAG","value":"$TAG"},{"name":"PREFIX","value":"TBD"}],"image":"quay.io/$QUAY_USER/rhte-app:$TAG","name":"rhte-app", "ports":[{"containerPort":3000}]}]}}}}}}'
+      value: '{"spec":{"template":{"spec":{"template":{"spec":{"containers":[{"env":[{"name":"CLUSTER_NAME","value":"TBD"},{"name":"IMAGE_TAG","value":"$TAG"},{"name":"PREFIX","value":"TBD"}],"image":"quay-common.apps.cluster-common.common.events.opentlc.com/$QUAY_USER/rhte-app:$TAG","name":"rhte-app", "ports":[{"containerPort":3000}]}]}}}}}}'
 EOF
 ----
 
@@ -1483,23 +1483,34 @@ tkn pr logs -f rhte-pipelinerun
 .Sample Output
 [source,texinfo,options=nowrap]
 ----
-[build : git-source-rhte-git-s9wc4] {"level":"warn","ts":1564093555.0595832,"logger":"fallback-logger","caller":"logging/config.go:65","msg":"Fetch GitHub commit ID from kodata failed: \"KO_DATA_PATH\" does not exist or is empty"}
-[build : git-source-rhte-git-s9wc4] {"level":"info","ts":1564093560.4725149,"logger":"fallback-logger","caller":"git/git.go:102","msg":"Successfully cloned https://github.com/wkulhanek/rhte-app.git @ master in path /workspace/source"}
+[build : git-source-rhte-git-6l8xt] {"level":"warn","ts":1565835054.7675672,"logger":"fallback-logger","caller":"logging/config.go:69","msg":"Fetch GitHub commit ID from kodata failed: \"KO_DATA_PATH\" does not exist or is empty"}
+[build : git-source-rhte-git-6l8xt] {"level":"info","ts":1565835057.2689905,"logger":"fallback-logger","caller":"git/git.go:102","msg":"Successfully cloned https://github.com/wkulhanek/rhte-app.git @ master in path /workspace/source"}
 
 [build : generate] Application dockerfile generated in /gen-source/Dockerfile.gen
 
-[build : image-digest-exporter-generate-dwlpw] []
+[build : image-digest-exporter-generate-49l8d] 2019/08/15 02:10:58 ImageResource rhte-image doesn't have an index.json file: stat /builder/home/image-outputs/image/index.json: no such file or directory
+[build : image-digest-exporter-generate-49l8d] 2019/08/15 02:10:58 Image digest exporter output: []
 
-[build : build] STEP 1: FROM centos/nodejs-10-centos7
-[build : build] Getting image source signatures
+[build : build] STEP 1: FROM registry.access.redhat.com/rhscl/nodejs-8-rhel7
 
 [....]
 
-[copy-image : nop] Build successful
+[tag-image : oc] Tag rhte-app:2.0 set to rhte-app@sha256:0a293b5abf1958b2f0af154b2c6ff510f7e0b04e279e483eba10360a279191b4.
+
+[copy-image : skopeo] Getting image source signatures
+[copy-image : skopeo] Copying blob sha256:92cc4d8eb1ee6ea21a5d28014d853cc2bac191bc3fd4fb9737fa90439eed1c31
+[copy-image : skopeo] Copying blob sha256:7d6351d37f23b8de7abc715ca89ead935630634f5d418a67e0fb6e81adb13a2c
+[copy-image : skopeo] Copying blob sha256:ba43a96d4c09d7111bae423c69de41a76212f911b647502e1748a8b28b0dc446
+[copy-image : skopeo] Copying blob sha256:7d0b324847a822ccbbb1fc49a1b0c369f99f934f52bd1b947c4c54dbb6bf38f3
+[copy-image : skopeo] Copying blob sha256:ee6b95d93e4ec1b3cfe870fbf976bb2f474dcc7a62c21c1c934e3018dc50edb8
+[copy-image : skopeo] Copying blob sha256:edead4452eb71ce818204403f8564ed24f2ada84d1899a740056267f10d4692f
+[copy-image : skopeo] Copying blob sha256:3ebf580ffbdc58c3bcf1d04a08ce00022a97fba999cff95d928774299b0e77e9
+[copy-image : skopeo] Copying blob sha256:899ca3ad627f9e31e207f9ab1632486b1a25e8d0eda961c0d5f64109e04c8b6f
+[copy-image : skopeo] Copying config sha256:925caa0add002f08aa734047291ae7993393395246e39cd4aaa5cd4e75cd1459
+[copy-image : skopeo] Writing manifest to image destination
+[copy-image : skopeo] Storing signatures
 
 [deploy-image : patch] federateddeployment.types.kubefed.k8s.io/rhte-app patched
-
-[deploy-image : nop] Build successful
 ----
 
 . That's it. Your pipeline has executed.
@@ -1528,14 +1539,14 @@ tkn tr list
 [source,texinfo,options=nowrap]
 ----
 NAME                                  STARTED          DURATION     STATUS
-copy-to-quay                          24 minutes ago   19 seconds   Succeeded
-rhte-pipelinerun-build-f4828          3 minutes ago    1 minute     Succeeded
-rhte-pipelinerun-copy-image-xnbdx     1 minute ago     18 seconds   Succeeded
-rhte-pipelinerun-deploy-image-zxtjk   1 minute ago     10 seconds   Succeeded
-rhte-pipelinerun-tag-image-bcj5h      1 minute ago     11 seconds   Succeeded
-s2i-nodejs                            1 hour ago       1 minute     Succeeded
-set-image                             19 minutes ago   10 seconds   Succeeded
-tag-image                             31 minutes ago   18 seconds   Succeeded
+rhte-pipelinerun-deploy-image-42wql   55 seconds ago   17 seconds   Succeeded
+rhte-pipelinerun-copy-image-c72fj     1 minute ago     28 seconds   Succeeded
+rhte-pipelinerun-tag-image-hx6ml      1 minute ago     17 seconds   Succeeded
+rhte-pipelinerun-build-rwbp6          5 minutes ago    3 minutes    Succeeded
+set-image                             9 minutes ago    16 seconds   Succeeded
+copy-to-quay                          12 minutes ago   52 seconds   Succeeded
+tag-image                             19 minutes ago   38 seconds   Succeeded
+s2i-nodejs                            1 hour ago       5 minutes    Succeeded
 ----
 +
 Notice the individual test task runs that you created earlier - and the 4 task runs starting with 'rhte-pipelinerun' that the pipeline created.
@@ -1550,18 +1561,19 @@ oc describe deployment rhte-app -n rhte-app-${GUID}|grep -i image
 .Sample Output
 [source,texinfo]
 ----
-    Image:      quay.io/wkulhanek/rhte-app:2.0
+    Image:      quay-common.apps.cluster-common.common.events.opentlc.com/wkulhanek/rhte-app:2.0
       IMAGE_TAG:     2.0
 ----
+
 . Finally in a Web Browser navigate to the route for the application both on cluster 1 and on cluster 2. The web application should show the following settings now:
 * You are on Cluster: Cluster 1
-* Image Tag for this application: 2.0
-* Your project prefix: min1
+* Image Tag for this application: *2.0*
+* Your project prefix: <Your GUID>
 
-. And on cluster 2:
+. And on cluster 2 (remember that the route on cluster 2 is http://rhte-app-<YOUR GUID>.apps.cluster-common.common.events.opentlc.com):
 * You are on Cluster: Cluster 2
-* Image Tag for this application: 2.0
-* Your project prefix: shared
+* Image Tag for this application: *2.0*
+* Your project prefix: common
 
 == Wrapup
 
