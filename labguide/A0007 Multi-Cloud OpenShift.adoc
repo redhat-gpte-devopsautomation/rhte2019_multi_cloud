@@ -72,7 +72,7 @@ echo "export SANDBOX_NUMBER=${SANDBOX_NUMBER}" >>$HOME/.bashrc
 +
 [source,sh]
 ----
-export CLUSTER1=cluster-${GUID}.${GUID}.sandbox${SANDBOX_NUMBER}.opentlc.com
+export CLUSTER1=$(oc whoami --show-server | cut -f 2 -d ':' | cut -f 3 -d '/'  | sed 's/api.//')
 export CLUSTER2=cluster-common.common.events.opentlc.com
 echo "export CLUSTER1=cluster-${GUID}.${GUID}.sandbox${SANDBOX_NUMBER}.opentlc.com" >>$HOME/.bashrc
 echo "export CLUSTER2=cluster-common.common.events.opentlc.com" >>$HOME/.bashrc
