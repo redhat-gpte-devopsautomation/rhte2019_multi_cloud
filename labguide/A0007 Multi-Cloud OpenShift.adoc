@@ -1,66 +1,69 @@
+:toc2:
+:linkattrs:
+
 = Red Hat Tech Exchange 2019
 
 == A0007 Multi-Cloud OpenShift Lab
 
-Welcome to the 2019 Multi-Cloud OpenShift Lab.
+Welcome to the 2019 Multi-Cloud OpenShift^(R)^ lab.
 
-You may remember that at RHTE 2018 we ran a similar lab. Federation didn't exist yet and the only pipeline technology to use was Jenkins. Therefore last year we did everything manually from a Jenkins Pipeline.
+You may remember that at Red Hat^(R)^ Tech Exchange (RHTE) 2018 we ran a similar lab. Federation did not exist yet, and the only pipeline technology available was Jenkins. So we did everything manually from a Jenkins pipeline.
 
-Only one year later we can now use a lot of Kubernetes / OpenShift technology to do some of the heavy lifting for us rather than having to worry about it in a Jenkins pipeline.
+Now, just one year later, we can use Kubernetes and OpenShift technology to perform many of these tasks instead of having to do everything in a Jenkins pipeline.
 
 === Goals
 
-In this lab you will:
+In this lab, you will:
 
-* Using *KubeFed* set up a Federated Cluster consisting of two OpenShift Clusters
+* Use *KubeFed* to set up a federated cluster consisting of two OpenShift clusters
 * Deploy an application to two clusters using federated API objects
 * Register for an account on a private *Quay* container registry
-* Use *OpenShift Pipelines* - which are based on _Tekton Pipelines_ - to build an updated container image for the application and re-deploy it to both clusters using KubeFed and the Quay image registry
+* Use *OpenShift Pipelines*--which are based on *Tekton Pipelines*--to build an updated container image for the application and redeploy it to both clusters using KubeFed and the Quay image registry
 
 [WARNING]
-Both KubeFed and OpenShift are Developer Preview at the moment. They can and will change before being released. Also both products currently require a *cluster administrator* account. Hopefully this will change before the final release.
+Both KubeFed and OpenShift are Developer Preview at the moment. They can and will change before they are released. In addition, both products currently require a *cluster administrator* account. Hopefully, this will change before the final release.
 
 === Infrastructure
 
-You have one primary cluster where you will be doing all the work. On this cluster you will have cluster-admin privileges. This cluster already has *KubeFed* deployed. Only the source cluster needs KubeFed deployed - all other clusters are managed from the primary cluster. This makes adding clusters to a federated cluster very easy.
+You have one primary cluster where you will do all of the work. On that cluster, you have cluster-admin privileges. That cluster already has KubeFed deployed. Only the source cluster needs KubeFed deployed--all other clusters are managed from the primary cluster. This makes adding clusters to a federated cluster very easy.
 
-There is a second, shared, cluster for all students to deploy your application to.
+There is a second, shared, cluster for all students to deploy your applications to.
 
 === Prerequisites
 
 . Get a GUID from the GUIDGrabber. This is the GUID of your personal cluster.
-* Cluster 1 has a bastion VM that you will use to execute all tasks.
+* Cluster 1 has a bastion VM that you use to execute all tasks.
 * GUIDGrabber will show the command to connect to the bastion VM.
 * Your cluster runs in a Sandbox. Make a note of the Sandbox Number.
-** For example if GUIDGrabber shows the following command:
+** For example, if GUIDGrabber shows the following command:
 +
 [source,sh]
 ----
 ssh lab-user@bastion.b1fa.sandbox23.opentlc.com
 ----
 +
-this means that your GUID is b1fa and your Sandbox Number is 23.
-. There is a second, shared, cluster. You will NOT receive a GUID for the second cluster.
+this means that your GUID is `b1fa` and your Sandbox Number is `23`.
+. There is a second, shared, cluster. You do _not_ receive a GUID for the second cluster.
 
-=== Logging into the Bastion VM for Cluster 1
+=== Log into Bastion VM for Cluster 1
 
-. Use your favorite SSH client to log into the Bastion VM of your personal cluster.
-* User ID: *lab-user*
-* Password: *rhte2019*
+. Use any SSH client of your choice to log into the Bastion VM of your personal cluster:
+* User ID: `lab-user`
+* Password: `rhte2019`
 +
 [source,sh]
 ----
 ssh lab-user@bastion.<GUID>.sandbox<SANDBOX_NUMBER>.opentlc.com
 ----
 
-. Double check that your GUID variable is set correctly:
+. Double-check that your GUID variable is set correctly:
 +
 [source,sh]
 ----
 echo ${GUID}
 ----
 
-. Set a variable _SANDBOX_NUMBER_ to the number of your sandbox and save it in `.bashrc`:
+. Set the `SANDBOX_NUMBER` variable to the number of your sandbox and save it in `.bashrc`:
 +
 [source,sh]
 ----
@@ -68,7 +71,7 @@ export SANDBOX_NUMBER=<your sandbox number>
 echo "export SANDBOX_NUMBER=${SANDBOX_NUMBER}" >>$HOME/.bashrc
 ----
 
-. Once you have the variables set properly set up two variables for the two clusters and save them in `.bashrc`:
+. After you have the variables set properly, set up two variables for the two clusters and save them in `.bashrc`:
 +
 [source,sh]
 ----
@@ -78,7 +81,7 @@ echo "export CLUSTER1=cluster-${GUID}.${GUID}.sandbox${SANDBOX_NUMBER}.opentlc.c
 echo "export CLUSTER2=cluster-common.common.events.opentlc.com" >>$HOME/.bashrc
 ----
 
-. Log into OpenShift as *admin* with password *rhte2019*. This is a user with full cluster administration privileges (but not system:admin)
+. Log into OpenShift as `admin` with password `rhte2019`. This is a user with full cluster administration privileges (but not system:admin):
 +
 [source,sh]
 ----
@@ -90,7 +93,7 @@ oc login -u admin -p rhte2019 --insecure-skip-tls-verify https://api.${CLUSTER1}
 ----
 Login successful.
 
-You have access to the following projects and can switch between them with 'oc project <projectname>':
+You have access to the following projects and can switch between them with `oc project <projectname>`:
 
   * default
     kube-federation-system
@@ -101,16 +104,16 @@ Using project "default".
 
 [NOTE]
 ====
-In order to save resources your personal cluster only consists of one master and one worker node. This is obviously not a supported configuration for a production cluster - but for the purposes of this lab it will suffice.
+To save resources, your personal cluster consists of only one master and one worker node. This is obviously not a supported configuration for a production cluster, but it is sufficient for the purposes of this lab.
 ====
 
-== Set up the Federated Cluster
+== Set Up Federated Cluster
 
 KubeFed requires clusters to be registered. The way this works is that an initial federated cluster is created. Then a second cluster is joined to this initial cluster.
 
-Once this step has been completed you can create a federated project to deploy your federated application into. KubeFed will take care of distributing the Kubernetes objects that make up thisapplication to every cluster in the federated cluster.
+After this step is completed, you can create a federated project to deploy your federated application into. KubeFed takes care of distributing the Kubernetes objects that make up this application to every cluster in the federated cluster.
 
-. Validate the Kubernetes Context you are using:
+. Validate the Kubernetes context you are using:
 +
 [source,sh]
 ----
@@ -125,8 +128,8 @@ CURRENT   NAME                                                             CLUST
 *         default/api-cluster-b1fa-b1fa-sandbox23-opentlc-com:6443/admin   api-cluster-b1fa-b1fa-sandbox23-opentlc-com:6443   admin/api-cluster-b1fa-b1fa-sandbox23-opentlc-com:6443   default
 ----
 +
-You will use the context `default/api-cluster-b1fa-b1fa-sandbox23-opentlc-com:6443/admin` for your initial cluster.
-. The context name is a bit difficult to remember. To make it easier rename the context to `cluster1-${GUID}`.
+You use the `default/api-cluster-b1fa-b1fa-sandbox23-opentlc-com:6443/admin` context for your initial cluster.
+. The context name is a bit difficult to remember. To make it easier, rename the context to `cluster1-${GUID}`:
 +
 [source,sh]
 ----
@@ -139,13 +142,13 @@ oc config rename-context $(oc config current-context) cluster1-${GUID}
 Context "default/api-cluster-b1fa-b1fa-sandbox23-opentlc-com:6443/admin" renamed to "cluster1-b1fa".
 ----
 
-. In order to join the clusters you need to also create a context for the second cluster. By logging into the second cluster the file $HOME/.kube/config in your first cluster VM will be updated with the context for the second cluster. That context contains the information how to access the second cluster.
+. To join the clusters, you need to also create a context for the second cluster. By logging into the second cluster, the `$HOME/.kube/config` file in your first cluster VM is updated with the context for the second cluster. That context contains the information about how to access the second cluster.
 +
-Log into the second cluster as user `admin`.
+Log into the second cluster as user `admin`:
 +
 [WARNING]
 ====
-Do not run any commands not listed in this lab on cluster 2 - this is a shared cluster and you might brake things for your fellow students!!
+Do not run any commands not listed in this lab on cluster 2. This is a shared cluster, and you might break things for your fellow students.
 ====
 +
 [source,sh]
@@ -153,15 +156,15 @@ Do not run any commands not listed in this lab on cluster 2 - this is a shared c
 oc login -u admin -p rhte2019 --insecure-skip-tls-verify https://api.${CLUSTER2}:6443
 ----
 
-. Now that you are logged into the second cluster your *local* kube config file in the cluster 1 bastion VM has been updated with the context for cluster 2.
-. Once again rename the current context to `cluster2-${GUID}`.
+. Now that you are logged into the second cluster, your _local_ Kube config file in the cluster 1 bastion VM has been updated with the context for cluster 2.
+. Once again, rename the current context to `cluster2-${GUID}`:
 +
 [source,sh]
 ----
 oc config rename-context $(oc config current-context) cluster2-${GUID}
 ----
 +
-Validate that the context for cluster 2 is now available:
+Verify that the context for cluster 2 is now available:
 +
 [source,sh]
 ----
@@ -177,7 +180,7 @@ CURRENT   NAME            CLUSTER                                             AU
 *         cluster2-b1fa   api-cluster-common-common-events-opentlc-com:6443   admin/api-cluster-common-common-events-opentlc-com:6443   default
 ----
 
-. Switch your active context back to cluster 1 (this is the same as logging back into the first cluster):
+. Switch your active context back to cluster 1. This is the same as logging back into the first cluster:
 +
 [source,sh]
 ----
@@ -186,7 +189,7 @@ oc config use-context cluster1-${GUID}
 
 . You now have easy access to the context for both cluster 1 and cluster 2.
 +
-Create the initial federated cluster.
+Create the initial federated cluster:
 +
 [source,sh]
 ----
@@ -215,7 +218,7 @@ I0814 08:12:14.603029   23391 join.go:248] Creating federated cluster resource
 I0814 08:12:14.609625   23391 join.go:257] Created federated cluster resource
 ----
 
-. Validate that the cluster is now registered as a federated cluster.
+. Validate that the cluster is now registered as a federated cluster:
 +
 [source,sh]
 ----
@@ -229,9 +232,9 @@ NAME            READY   AGE
 cluster1-b1fa   True    35s
 ----
 +
-If the value in column *READY* is not yet *True* repeat the command until it is.
+If the value in column `READY` is not yet `True`, repeat the command until it is.
 
-. Describe the federated cluster.
+. Describe the federated cluster:
 +
 [source,sh]
 ----
@@ -271,11 +274,11 @@ Status:
     ap-southeast-1a
 Events:  <none>
 ----
-
++
 // Unjoin if necessary
 // kubefedctl unjoin cluster2 --host-cluster-context cluster1 --cluster-context cluster2 --v=2
 
-. Now join the second cluster to the first cluster to create your federated environment.
+. Join the second cluster to the first cluster to create your federated environment:
 +
 [source,sh]
 ----
@@ -303,7 +306,7 @@ I0814 08:13:37.400790   23438 join.go:248] Creating federated cluster resource
 I0814 08:13:37.412103   23438 join.go:257] Created federated cluster resource
 ----
 
-. Once again validate the the cluster is ready - and describe the properties of the cluster
+. Once again, verify that the cluster is ready, and describe the properties of the cluster:
 +
 [source,sh]
 ----
@@ -323,7 +326,7 @@ cluster2-b1fa   True    19s
 oc describe kubefedcluster cluster2-${GUID} -n kube-federation-system
 ----
 
-. Your clusters are ready to receive and distributed federated resources. The setup for this lab already registered 4 types with the Kube Federation system:
+. Your clusters are ready to receive and distributed federated resources. The setup for this lab already registered four types with the Kube Federation system:
 +
 [options=header]
 |====
@@ -334,14 +337,14 @@ oc describe kubefedcluster cluster2-${GUID} -n kube-federation-system
 |Ingress|FederatedIngress
 |====
 +
-Once registered the cluster now understands the federated type and if you create a federated resource it is automatically distributed over all clusters.
+After being registered, the cluster now understands the federated type. If you create a federated resource, it is automatically distributed over all of the clusters.
 +
 [TIP]
-You can enable additional API types using the command `kubefedctl enable <type>` - for example `kubefedctl enable PersistentVolumeClaim`.
+You can enable additional API types using the `kubefedctl enable <type>` command--for example, `kubefedctl enable PersistentVolumeClaim`.
 
-== Set up Federated Project and Federated Application
+== Set Up Federated Project and Federated Application
 
-. Start by creating a federated project. First you create a project on your first cluster.
+. Start by creating a federated project. First, create a project on your first cluster:
 +
 [source,sh]
 ----
@@ -362,7 +365,7 @@ to build a new example application in Python. Or use kubectl to deploy a simple 
     kubectl create deployment hello-node --image=gcr.io/hello-minikube-zero-install/hello-node
 ----
 
-. Once the project exists use `kubefedctl` to federate the project.
+. When the project exists, use `kubefedctl` to federate the project:
 +
 [source,sh]
 ----
@@ -376,9 +379,9 @@ I0815 00:22:52.983400   28879 federate.go:459] Resource to federate is a namespa
 I0815 00:22:52.988064   28879 federate.go:488] Successfully created FederatedNamespace "rhte-app-b1fa/rhte-app-b1fa" from Namespace
 ----
 +
-You could have also created the FederatedNamespace from a YAML definition. That way you wouldn't have needed to first create the project and then federate it. In the next few steps you will use the YAML approach. Using `kubefedctl federate` is a convenient way to federate resources that already exist.
+You could have also created the `FederatedNamespace` from a YAML definition. That way, you would not have needed to first create the project and then federate it. In the next few steps, you use the YAML approach. Using `kubefedctl federate` is a convenient way to federate resources that already exist.
 
-. Create a directory for the YAML manifests.
+. Create a directory for the YAML manifests:
 +
 [source,sh]
 ----
@@ -386,7 +389,7 @@ mkdir $HOME/rhte-app
 cd $HOME/rhte-app
 ----
 
-. Create the Federated Deployment for the application.
+. Create the Federated Deployment for the application:
 +
 [source,sh]
 ----
@@ -444,14 +447,14 @@ EOF
 ----
 
 . Note the following:
-* Under *spec.template.spec.template you* will find the original Deployment definition. It contains metadata, spec with container definition and a few envrionment variables.
-** The image that gets deployed is *quay.io/wkulhanek/rhte-placeholder:latest*. It does not have the capability to read environment variables. You will update to a proper container image when writing the pipeline.
-* *placement* specifies that this deployment should be placed on both clusters, *cluster1* and *cluster2*.
-* The application that we use understands a few environment variables and shows the value of the environment variables in a web page. In order to specify the correct environment variable for each cluster the *overrides* section specifies specific values for each cluster.
+* Under `spec.template.spec.template`, you will find the original Deployment definition. It contains metadata, the spec with the container definition, and a few environment variables.
+** The image that gets deployed is `quay.io/wkulhanek/rhte-placeholder:latest`. It does not have the capability to read environment variables. You will update to a proper container image when writing the pipeline.
+* `placement` specifies that this deployment is to be placed on both clusters, `cluster1` and `cluster2`.
+* The application that you are using understands a few environment variables and shows the value of the environment variables as a web page. To specify the correct environment variable for each cluster, the `overrides` section specifies specific values for each cluster.
 +
-For example on cluster 1 the environment variable *CLUSTER_NAME* will be set to *Cluster 1* while on cluster 2 it will be set to *Cluster 2*
+For example, on cluster 1 the `CLUSTER_NAME` environment variable will be set to `Cluster 1`, while on cluster 2 it will be set to `Cluster 2`.
 
-. Now create the Federated Deployment.
+. Now create the Federated Deployment:
 +
 [source,sh]
 ----
@@ -464,7 +467,7 @@ oc create -f $HOME/rhte-app/deployment.yaml -n rhte-app-${GUID}
 federateddeployment.types.kubefed.k8s.io/rhte-app created
 ----
 
-. Validate that both the Federated Deployment and the Deployment now exist.
+. Validate that both the Federated Deployment and the Deployment now exist:
 +
 [source,sh]
 ----
@@ -481,7 +484,7 @@ NAME                             READY   UP-TO-DATE   AVAILABLE   AGE
 deployment.extensions/rhte-app   1/1     1            1           97s
 ----
 
-. An application needs the networking resources to be accessible. Create the definition for the federated service.
+. An application needs the networking resources to be accessible. Create the definition for the federated service:
 +
 [source,sh]
 ----
@@ -505,8 +508,8 @@ spec:
 EOF
 ----
 
-. Once again notice that the *spec.template.spec* contains the information you you would usually see in a *service* object.
-. Create the federated service.
+. Again, note that `spec.template.spec` contains the information you usually would see in a `service` object.
+. Create the federated service:
 +
 [source,sh]
 ----
@@ -519,9 +522,9 @@ oc create -f $HOME/rhte-app/service.yaml -n rhte-app-${GUID}
 federatedservice.types.kubefed.k8s.io/rhte-app created
 ----
 
-. Finally you need to create a Route to make the application accessible from the internet. In this lab we decided to use standard Kubernetes objects and therefore you will create an *Ingress* resource - which OpenShift automatically converts into a *Route*.
+. Finally, you need to create a Route to make the application accessible from the Internet. This lab uses standard Kubernetes objects--therefore, you create an `Ingress` resource, which OpenShift automatically converts into a `Route`.
 +
-Create the YAML definition of the *FederatedIngress* resource
+Create the YAML definition of the `FederatedIngress` resource:
 +
 [source,sh]
 ----
@@ -557,12 +560,12 @@ spec:
 EOF
 ----
 
-. Once again notice the following:
-* *spec.template.spec* contains the usual fields you would expect to see in a Kubernetes Ingress resource
-* *placement* once again specifies that both clusters should receive this ingress object (and therefore the route)
-* *overrides* specifies the hostname for the ingress object. This is necessary because the default subdomain is different on both clusters. Therefore you need to explicitely set the hostname.
+. Again, note the following:
+* `spec.template.spec` contains the usual fields you would expect to see in a Kubernetes Ingress resource.
+* `placement` once again specifies that both clusters are to receive this ingress object--and therefore, the route.
+* `overrides` specifies the hostname for the ingress object. This is necessary because the default subdomain is different on both clusters. Therefore, you need to explicitly set the hostname.
 
-. Create the FederatedIngress resource.
+. Create the `FederatedIngress` resource:
 +
 [source,sh]
 ----
@@ -575,7 +578,7 @@ oc create -f $HOME/rhte-app/ingress.yaml -n rhte-app-${GUID}
 federatedingress.types.kubefed.k8s.io/rhte-app created
 ----
 
-. Validate that in fact both an *ingress* and *route* resource got created.
+. Validate that in fact both an `ingress` and `route` resource were created:
 +
 [source,sh]
 ----
@@ -592,17 +595,17 @@ NAME                                      HOST/PORT                             
 route.route.openshift.io/rhte-app-jqzv4   rhte-app-b1fa.apps.cluster-b1fa.b1fa.sandbox23.opentlc.com   /      rhte-app   3000                 None
 ----
 
-. In a browser window navigate to the route displayed (in the example above `rhte-app-b1fa.apps.cluster-b1fa.b1fa.sandbox23.opentlc.com`) and validate that the application works and does not tell you which cluster it is running on (you should see "Placeholder for" for all three lines of text).
+. In a browser window, navigate to the route displayed--in the example above, `rhte-app-b1fa.apps.cluster-b1fa.b1fa.sandbox23.opentlc.com`&#8212;and validate that the application works and does not tell you which cluster it is running on. You should see `Placeholder for` for all three lines of text.
 
-. As a final step validate that the application is running in the second cluster as well.
+. As a final step, verify that the application is running in the second cluster as well.
 +
-Log back into the second cluster
+Log back into the second cluster:
 +
 [source,sh]
 ----
 oc config use-context cluster2-${GUID}
 ----
-. Display all resources in the project *rhte-app-${GUID}*. Note that you never created the project in cluster 2 - but by federating the namespace the project got created in cluster 2 as well.
+. Display all resources in the `rhte-app-${GUID}` project. Note that you never created the project in cluster 2--but by federating the namespace, the project was created in cluster 2, as well:
 +
 [source,sh]
 ----
@@ -630,9 +633,9 @@ route.route.openshift.io/rhte-app-zhlmf   rhte-app-b1fa.apps.cluster-common.comm
 NAME                          HOSTS                                                         ADDRESS   PORTS   AGE
 ingress.extensions/rhte-app   rhte-app-b1fa.apps.cluster-common.common.events.opentlc.com             80      93s
 ----
-. Notice that all resources are available in cluster 2 as well - and that the route and ingress point to the domain in cluster 2.
+. Note that all resources are available in cluster 2 as well, and that the route and ingress point to the domain in cluster 2.
 
-. Validate that the deployment has been updated with environment variables for Cluster 2 as well (remember the *overrides* section in the original federated eployment):
+. Validate that the deployment has been updated with environment variables for cluster 2, as well (remember the `overrides` section in the original federated deployment):
 +
 [source,sh]
 ----
@@ -648,7 +651,7 @@ IMAGE_TAG=To be overwritten
 PREFIX=common
 ----
 
-. Log back into Cluster 1
+. Log back into cluster 1:
 +
 [source,sh]
 ----
@@ -658,68 +661,69 @@ oc config use-context cluster1-${GUID}
 Your federated project is now set up and ready to be used in the pipeline.
 
 
-== Create a Tekton Pipeline
+== Create Tekton Pipeline
 
-Now that the application is ready you can set up a pipeline to do the following:
+Now that the application is ready, you can set up a pipeline to do the following:
 
 * Build a container image from a GitHub repository
 * Tag the container image with a Tag
 * Copy the container image into an external registry to make it accessible from both clusters
 * Update the Federated Deployment to update the deployments on both clusters with the new container image
 
-OpenShift Pipelines is a fully Kubernetes native pipeline implementation. It is under heavy development and there is not yet a Graphical User Interface for building, running and managing pipelines. On OpenShift 4 the pipelines are managed using the *OpenShift Pipeline Operator*. This operator has already been deployed into your primary cluster.
+OpenShift Pipelines is a fully Kubernetes-native pipeline implementation. It is under heavy development, and it does not yet have a Graphical User Interface for building, running, and managing pipelines. On OpenShift 4, the pipelines are managed using the *OpenShift Pipeline Operator*. This operator has already been deployed into your primary cluster.
 
 [TIP]
-You can find a tutorial for OpenShift Pipelines at https://github.com/openshift/pipelines-tutorial.
+You can find a tutorial for OpenShift Pipelines at link:https://github.com/openshift/pipelines-tutorial[https://github.com/openshift/pipelines-tutorial^].
 
-Pipelines consist of *Tasks* and *Pipelines*. Both tasks and pipelines are designed to be reusable. To run a task you create a *TaskRun*. And to run a pipeline you create a *PipelineRun*. Both taskruns and pipelineruns can pass parameters into the tasks and pipelines to influence the build steps.
+Pipelines consist of *Tasks* and *Pipelines*. Both tasks and pipelines are designed to be reusable. To run a task you create a *TaskRun*, and to run a pipeline you create a *PipelineRun*. Both TaskRuns and PipelineRuns can pass parameters into the tasks and pipelines to influence the build steps.
 
-Common *PipelineResources* consist of git repositories or container image locations.
+Common *PipelineResources* consist of Git repositories or container image locations.
 
-=== Register Quay account
+=== Register Quay Account
 
-You will use the Quay registry to hold the container images for your application.
+In this lab, you use the Quay registry to hold the container images for your application.
 
-If you do not yet have a Quay account you will need to register for a Quay account. If you already have a quay account log into quay, skip this step and go to the next section to create a Quay repository.
+If you do not have a Quay account, you need to register for one. If you already have a Quay account, log into Quay, skip this section, and go to the next section to create a Quay repository.
 
-. In a web browser navigate to https://quay-common.apps.cluster-common.common.events.opentlc.com
-* This is a private Quay container image registry just for our lab. It is being managed by the Quay Operator (https://github.com/redhat-cop/quay-operator).
-. On the Quay Homepage click *Create Account* (under the login entry fields)
-. Pick a user name, specify your e-mail address (we will not use that for anything) and pick a password. Then click *Create Account*.
-. Your account will be created and you will be logged into Quay.
+. In a web browser, navigate to link:https://quay-common.apps.cluster-common.common.events.opentlc.com[https://quay-common.apps.cluster-common.common.events.opentlc.com^].
+* This is a private Quay container image registry set up just for this lab. It is being managed by the link:https://github.com/redhat-cop/quay-operator[Quay Operator].
+. On the Quay home page, click *Create Account* below the login entry fields.
+. Pick a username, specify your email address, and pick a password. Then click *Create Account*.
+** Your email address will not be used for anything.
+Your account will be created, and you will be logged into Quay.
 
 === Create Quay Repository
 
-You will create a public repository in Quay that you will use to push your container images to.
+You now create a public repository in Quay that you use to push your container images to.
 
-. Click *+ Create New Repository* link (towards the top right of the Qauy web page).
+. Click the *Create New Repository* link toward the top right of the Quay page.
 . Use *rhte-app* as the name of the repository.
-. Make sure to select *Public* for the type of repository.
-. Then click *Create Public Repository*.
+. Make sure you select *Public* for the type of repository.
+. Click *Create Public Repository*.
 
 === Create Quay Robot Account
 
-While your image repository is public you need credentials to access Quay from the pipeline to push images. It is generally a bad idea to use your own user id and password. But luckily Quay has a mechanism to create a *Robot Account* - which can easily be updated (or revoked) if necessary.
+While your image repository is public, you need credentials to access Quay from the pipeline to push images. It is generally a bad idea to use your own user ID and password. Fortunately, Quay has a mechanism to create a *Robot Account*, which can easily be updated or revoked if necessary.
 
-. In the Quay Web Interface click your account name in the top right corner, then select *Account Settings*.
-. On the left click the second icon from the top (the one looking like a robot). Then on the right click *+Create Robot Account*.
-. In the entry field use *rhte* as the name for the new robot account and optionally add a description. Then click *Create robot account*.
-. When prompted for permissions select the *rhte-app* repository by checking the box to the left of it, and change the *Permission* dropdown to *Write*. Then click *Add Permission*.
-. Note your newly created robot account consisting of your account name and the name of the robot account (e.g. `wkulhanek+rhte`).
-. Click the little settings icon to the far right of your robot account (looks like a little wheel) and select *View Credentials*.
-. Make sure to save both your robot account *Username* (e.g. `wkulhanek+rhte`) and the *Robot Token*. It may be a good idea to write them into a text file. You will need these credentials later in the lab.
-. Once you have copied the Username and Token you may close the Quay window.
+. In the Quay web interface, click your account name in the top right corner, then select *Account Settings*.
+. On the left, click the second icon from the top--the one that looks like a robot. Then, on the right, click *Create Robot Account*.
+. In the entry field, use *rhte* as the name for the new robot account. Optionally, add a description. Then click *Create robot account*.
+. When prompted for permissions, select the *rhte-app* repository by checking the box to the left of it. Change the *Permission* dropdown to *Write*. Then click *Add Permission*.
+. For your newly created robot account, note your account name and the name of the robot account--e.g., *wkulhanek+rhte*.
+. Click the settings icon--the one that looks like a gear--to the far right of your robot account, and select *View Credentials*.
+. Make sure to save both your robot account *Username* (e.g., *wkulhanek+rhte*) and the *Robot Token*. (You may want to write them into a text file.) You need these credentials later in the lab.
+. After you have copied the username and token, you may close the Quay window.
 
-=== Set up the Pipeline Project
+=== Set Up Pipeline Project
 
-. From the bastion VM create a project to hold the pipeline.
+. From the bastion VM, create a project to hold the pipeline:
 +
 [source,sh]
 ----
 oc new-project rhte-pipeline --display-name="RHTE 2019 OpenShift Pipeline"
 ----
 
-. Also create a directory to hold all the YAML files representing the various resources that make up the pipeline.
+. Create a directory to hold all of the YAML files representing the various resources that make up the pipeline:
 +
 [source,sh]
 ----
@@ -727,7 +731,7 @@ mkdir $HOME/pipeline
 cd $HOME/pipeline
 ----
 
-. Create a *Secret* YAML manifest to store the Quay Robot Account credentials. Make sure to use *your* robot account and token.
+. Create a *Secret* YAML manifest to store the Quay Robot Account credentials. Make sure to use _your_ robot account and token:
 +
 [source,sh]
 ----
@@ -749,7 +753,7 @@ stringData:
 EOF
 ----
 
-. Create the Secret in the pipeline project
+. Create the secret in the pipeline project:
 +
 [source,sh]
 ----
@@ -762,11 +766,11 @@ oc create -f $HOME/pipeline/quay-secret.yaml -n rhte-pipeline
 secret/quay-credentials created
 ----
 
-. Pipelines need a service account with permissions to run privileged pods - especially build pods. But because the pipeline will also need to update the KubeFed objects we will just grant cluster-admin permissions to the pipeline service account. Note that in a production system this would not be recommended and hopefully a future release of KubeFed will no longer require cluster-admin permission.
+. Pipelines need a service account with permissions to run privileged pods--especially build pods. But because the pipeline also needs to update the KubeFed objects, you need to grant cluster-admin permissions to the pipeline service account. Note that this would not be recommended in a production system, and hopefully a future release of KubeFed will no longer require cluster-admin permission.
 +
 The service account also needs to be linked to the Quay credentials secret that you just created.
 +
-Create the service account definition.
+Create the service account definition:
 +
 [source,sh]
 ----
@@ -779,7 +783,7 @@ secrets:
   - name: quay-credentials
 EOF
 ----
-. Create the Service Account
+. Create the service account:
 +
 [source,sh]
 ----
@@ -791,9 +795,9 @@ oc create -f pipeline-serviceaccount.yaml -n rhte-pipeline
 ----
 serviceaccount/pipeline created
 ----
-. Now grant the right permissions to the service account. The Service account needs to roles:
-* *privileged*: This is necessary to run builds inside a container.
-* *cluster-admin*: This is necessary for the pipeline to be able to update KubeFed resources. In the future it will be possible to use much more restrictive permissions.
+. Now grant the proper permissions to the service account. The service account needs two roles:
+* `privileged`: This is necessary to run builds inside a container.
+* `cluster-admin`: This is necessary for the pipeline to be able to update KubeFed resources. In the future it will be possible to use much more restrictive permissions.
 +
 [source,sh]
 ----
@@ -808,20 +812,20 @@ securitycontextconstraints.security.openshift.io/privileged added to: ["system:s
 clusterrole.rbac.authorization.k8s.io/cluster-admin added: "system:serviceaccount:rhte-pipeline:pipeline"
 ----
 
-=== Set up Tasks
+=== Set Up Tasks
 
-The first step in setting up a pipeline is to create all the task definitions that the pipeline will use.
+The first step in setting up a pipeline is to create all of the task definitions that the pipeline will use.
 
 The pipeline for this lab uses the following tasks:
 
 * S2I NodeJS Build
-* OpenShift CLI (for tagging)
-* Skopeo (to move the container image to Quay)
-* OpenShift Patch (to update the Federated Deployment with the new image location)
+* OpenShift CLI: For tagging
+* Skopeo: To move the container image to Quay
+* OpenShift Patch: To update the Federated Deployment with the new image location
 
-Both the Tekton GitHub repository (https://github.com/tektoncd/catalog) and the OpenShift Pipelines GitHub repository (https://github.com/openshift/pipelines-catalog) have a catalog of available tasks.
+Both the link:https://github.com/tektoncd/catalog[Tekton GitHub repository^] and the link:https://github.com/openshift/pipelines-catalog[OpenShift Pipelines GitHub repository^] have a catalog of available tasks.
 
-. Create the S2I NodeJS Tasks.
+. Create the S2I NodeJS task:
 +
 [source,sh]
 ----
@@ -834,7 +838,7 @@ oc create -f https://raw.githubusercontent.com/openshift/pipelines-catalog/maste
 task.tekton.dev/s2i-nodejs created
 ----
 
-. Create the OpenShift CLI Task
+. Create the OpenShift CLI task:
 +
 [source,sh]
 ----
@@ -847,9 +851,9 @@ oc create -f https://raw.githubusercontent.com/tektoncd/catalog/master/openshift
 task.tekton.dev/openshift-client created
 ----
 
-. We need a task to copy the image from the integrated OpenShift registry to an external registry - which in our case is Quay. There is a container image for this task already available. All you need to create is the task definition.
+. You need a task to copy the image from the integrated OpenShift registry to an external registry, which in this case is Quay. There is a container image for this task already available. All you need to create is the task definition.
 +
-Create the task manifest YAML file
+Create the task manifest YAML file:
 +
 [source,sh]
 ----
@@ -872,7 +876,7 @@ spec:
       - "\${inputs.params.ARGS}"
 EOF
 ----
-. Then create the task
+. Then create the task:
 +
 [source,sh]
 ----
@@ -885,7 +889,7 @@ oc create -f $HOME/pipeline/task-skopeo.yaml -n rhte-pipeline
 task.tekton.dev/skopeo created
 ----
 
-. Finally create a task to patch a resource in OpenShift - the generic OpenShift CLI task does not work for this use case.
+. Finally, create a task to patch a resource in OpenShift. The generic OpenShift CLI task does not work for this use case:
 +
 [source,sh]
 ----
@@ -914,7 +918,7 @@ spec:
     command: ['/usr/local/bin/oc-origin', 'patch', '\${inputs.params.RESOURCE}', '\${inputs.params.RESOURCE_NAME}', '-n', '\${inputs.params.NAMESPACE}', '--type', '\${inputs.params.TYPE}', '--patch', '\${inputs.params.PATCH}']
 EOF
 ----
-. And create the task
+. Create the task:
 +
 [source,sh]
 ----
@@ -927,7 +931,7 @@ oc create -f $HOME/pipeline/task-patch.yaml -n rhte-pipeline
 task.tekton.dev/patch created
 ----
 
-. Validate that all 4 tasks are now registered.
+. Verify that all four tasks are now registered:
 +
 [source,sh]
 ----
@@ -944,13 +948,13 @@ s2i-nodejs         12m
 skopeo             8m14s
 ----
 
-=== Set up Pipeline Resources
+=== Set Up Pipeline Resources
 
-Since Pipelines are supposed to be generic you need a way to provide the parameters to the parameters and indeed the tasks that make up the pipeline. This is implemented using *PipelineResource* resources.
+Since Pipelines are supposed to be generic, you need a way to provide the parameters to the pipeline and the tasks that make up the pipeline. This is implemented using *PipelineResource* resources.
 
-In this lab you use two resources, the Git repository with the source code and the name and tag of the container image to be built.
+In this lab, you use two resources--the Git repository with the source code and the name and tag of the container image to be built.
 
-. Create the PipelineResource definition for the Git Repository
+. Create the `PipelineResource` definition for the Git Repository:
 +
 [source,sh]
 ----
@@ -966,7 +970,7 @@ spec:
     value: https://github.com/wkulhanek/rhte-app.git
 EOF
 ----
-. Create the Git Pipeline Resource.
+. Create the Git PipelineResource:
 +
 [source,sh]
 ----
@@ -979,7 +983,7 @@ oc create -f $HOME/pipeline/rhte-git.yaml -n rhte-pipeline
 pipelineresource.tekton.dev/rhte-git created
 ----
 
-. Create the PipelineResource definition for the container image.
+. Create the `PipelineResource` definition for the container image:
 +
 [source,sh]
 ----
@@ -995,8 +999,8 @@ spec:
     value: image-registry.openshift-image-registry.svc:5000/rhte-app-${GUID}/rhte-app:latest
 EOF
 ----
-. Note that the image is located in the project `rhte-app-CLUSTER2_USER` while the PipelineResource will be created in the `rhte-pipeline` project.
-. Create the Image Pipeline Resource.
+. Note that the image is located in the `rhte-app-CLUSTER2_USER` project, while the PipelineResource will be created in the `rhte-pipeline` project.
+. Create the Image Pipeline Resource:
 +
 [source,sh]
 ----
@@ -1009,12 +1013,12 @@ oc create -f $HOME/pipeline/rhte-image.yaml -n rhte-pipeline
 pipelineresource.tekton.dev/rhte-image created
 ----
 
-=== Test the Pipeline Tasks
+=== Test Pipeline Tasks
 
-You can test every task by creating *TaskRun* resources. A TaskRun resource references a *Task*, *Service Account* to run the task and inputs to the task.
+You can test every task by creating *TaskRun* resources. A TaskRun resource references a *Task*, a *Service Account* to run the task, and inputs to the task.
 
-. First test the Build task
-.. Create the TaskRun definition to test the Build task.
+. First, test the Build task.
+.. Create the TaskRun definition to test the Build task:
 +
 [source,sh]
 ----
@@ -1046,9 +1050,9 @@ spec:
 EOF
 ----
 
-.. Note the parameters provided to the Task: The input to the tasks is the *PipelineResource* `rhte-git` and the output is the `rhte-image` resource.
+.. Note the parameters provided to the Task: The input to the tasks is the `rhte-git` PipelineResource, and the output is the `rhte-image` resource.
 
-.. Create the taskrun - which will immediately execute the task.
+.. Create the taskrun. This immediately executes the task:
 +
 [source,sh]
 ----
@@ -1060,7 +1064,7 @@ oc create -f $HOME/pipeline/taskrun-1-s2i-build.yaml -n rhte-pipeline
 ----
 taskrun.tekton.dev/s2i-nodejs created
 ----
-.. Taskruns are executed as Pods in OpenShift. Each step in the Task maps into a container in the pod. You can look at the pod itself but OpenShift Pipelines also provides a CLI tool to directly look at logs and other properties of TaskRuns (and PipelineRuns). Using the `tkn` tool you can see the aggregate logs of all the containers in the build.
+.. Taskruns are executed as Pods in OpenShift. Each step in the Task maps into a container in the pod. You can look at the pod itself, but OpenShift Pipelines also provides a CLI tool to directly look at logs and other properties of TaskRuns and PipelineRuns. Using the `tkn` tool, you can see the aggregate logs of all of the containers in the build.
 +
 Follow along the build:
 +
@@ -1094,7 +1098,7 @@ tkn taskrun logs -f s2i-nodejs
 [image-digest-exporter-push-z6pvv] 2019/08/15 00:53:32 Image digest exporter output: []
 ----
 
-.. Validate that the image got built (in the rhte-app project):
+.. Validate that the image was built in the `rhte-app` project:
 +
 [source,sh]
 ----
@@ -1108,8 +1112,8 @@ NAME       IMAGE REPOSITORY                                                     
 rhte-app   image-registry.openshift-image-registry.svc:5000/rhte-app-b1fa/rhte-app   latest   5 minutes ago
 ----
 
-. Second test the Image Tagging task
-.. Create the TaskRun definition TAG=1.0 as the tag of the image.
+. Next, test the Image Tagging task.
+.. Create the TaskRun definition `TAG=1.0` as the tag of the image:
 +
 [source,sh]
 ----
@@ -1130,9 +1134,9 @@ spec:
 EOF
 ----
 
-.. Note the parameters provided to the Task: The input to the tasks is simply the command line arguments to the OpenShift CLI.
+.. Note the parameters provided to the Task. The input to the tasks is simply the command line arguments to the OpenShift CLI.
 
-.. Create the taskrun.
+.. Create the taskrun:
 +
 [source,sh]
 ----
@@ -1159,7 +1163,7 @@ tkn taskrun logs -f tag-image
 [nop] Build successful
 ----
 
-.. Validate that the image now has tag 1.0.
+.. Validate that the image now has tag 1.0:
 +
 [source,sh]
 ----
@@ -1173,8 +1177,8 @@ NAME       IMAGE REPOSITORY                                                     
 rhte-app   image-registry.openshift-image-registry.svc:5000/rhte-app-b1fa/rhte-app   1.0,latest   About a minute ago
 ----
 
-. Third test the Image Copying task
-.. Create the TaskRun definition TAG=1.0 as the tag of the image. Also set *QUAY_USER* to *your* Quay User ID. This is *_NOT_* the robot account but your userid. You need that because your repository in Quay is in your personal account.
+. Next, test the Image Copying task.
+.. Create the TaskRun definition `TAG=1.0` as the tag of the image. Also set `QUAY_USER` to _your_ Quay user ID. This is _not_ the robot account, but your user ID. You need that because your repository in Quay is in your personal account:
 +
 [source,sh]
 ----
@@ -1197,9 +1201,9 @@ spec:
 EOF
 ----
 
-.. Note the parameters provided to the Task: The input to the tasks is simply the command line arguments to *skopeo**.
+.. Note the parameters provided to the Task. The input to the tasks is simply the command line arguments to `skopeo`.
 
-.. Create the taskrun.
+.. Create the taskrun:
 +
 [source,sh]
 ----
@@ -1235,10 +1239,10 @@ tkn taskrun logs -f copy-to-quay
 [skopeo] Storing signatures
 ----
 
-.. In your web browser navigate to https://quay-common.apps.cluster-common.common.events.opentlc.com again and check that your repository now has an image in it with tag 1.0
+.. In your web browser, navigate to link:https://quay-common.apps.cluster-common.common.events.opentlc.com[https://quay-common.apps.cluster-common.common.events.opentlc.com^] and check that your repository now has an image in it with tag 1.0.
 
-. Finally test setting the image in the Federated Deployment.
-.. Create the TaskRun definition.
+. Finally, test setting the image in the Federated Deployment.
+.. Create the TaskRun definition:
 +
 [source,sh]
 ----
@@ -1270,9 +1274,9 @@ spec:
 EOF
 ----
 
-.. Note the parameters provided to the Task: The input to the tasks contains the Type of resource, resource name, namespace, merge type and finally the patch string.
+.. Note the parameters provided to the Task. The input to the tasks contains the type of resource, resource name, namespace, merge type, and patch string.
 
-.. Create the taskrun.
+.. Create the taskrun:
 +
 [source,sh]
 ----
@@ -1297,7 +1301,7 @@ tkn taskrun logs -f set-image
 [patch] federateddeployment.types.kubefed.k8s.io/rhte-app patched
 ----
 
-.. Validate that the Federated Deployment has updated the deployment with the new image.
+.. Verify that the Federated Deployment has updated the deployment with the new image:
 +
 [source,sh]
 ----
@@ -1318,21 +1322,24 @@ oc describe deployment rhte-app -n rhte-app-${GUID}|grep -i image
 oc get route -n rhte-app-${GUID}
 ----
 +
-.. Using the route to your application validate in a web browser that the placeholder application has been replaced with the real application. This application now reads the Environment Variables from the Pod and displays them. You should see the following:
-* You are on Cluster: Cluster 1
-* Image Tag for this application: 1.0
-* Your project prefix: <Your GUID>
+.. Using the route to your application, validate in a web browser that the placeholder application has been replaced with the real application. This application now reads the Environment Variables from the Pod and displays them. You should see the following:
+
+* You are on Cluster: *Cluster 1*
+* Image Tag for this application: *1.0*
+* Your project prefix: *_<Your GUID>_*
 
 . This concludes the tests.
 
-=== Create and run Pipeline
+=== Create and Run Pipeline
 
-Now that all tests have succeeded you are ready to create and run the pipeline.
+Now that all of the tests have succeeded, you are ready to create and run the pipeline.
 
-. First create the Pipeline YAML definition. This time we are using TAG=2.0 because we want to see the new tag being applied.
+. Create the pipeline YAML definition. This time you are using `TAG=2.0`, because you want to see the new tag being applied:
 +
 [NOTE]
-In the future there may be a way to set this via a PipelineResource - but currently this does not seem possible. Also note that we are hardcoding the namespace for the same reason.
+====
+In the future, there may be a way to set this via a PipelineResource--but currently this does not seem possible. Also note that you are hard-coding the namespace for the same reason.
+====
 +
 [source,sh]
 ----
@@ -1414,7 +1421,7 @@ oc create -f $HOME/pipeline/rhte-pipeline.yaml -n rhte-pipeline
 pipeline.tekton.dev/rhte-pipeline created
 ----
 
-. Now that you have the Pipeline in OpenShift you can create a PipelineRun to execute the Pipeline. This PipelineRun resource provides the inputs for the pipeline. As noted above ideally the TAG and Namespace would also come from PipelineResources - but at the moment (of writing this lab) that does not seem possible. Therefore those settings had been specified in the Pipeline resource itself.
+. Now that you have the pipeline in OpenShift, you can create a PipelineRun to execute the pipeline. This PipelineRun resource provides the inputs for the pipeline. As noted above, ideally, the tag and namespace would also come from PipelineResources--but as of the writing of this lab, that does not seem possible. Therefore, those settings are specified in the Pipeline resource itself.
 +
 Create the PipelineRun definition:
 +
@@ -1443,9 +1450,9 @@ spec:
 EOF
 ----
 
-. Note that usually you would use `generateName` instead of `name` in the `metadata` section to generate a new pipelinerun name every time you created this object. But for the purposes of this lab executing one pipeline run will be enough. 
+. Note that normally you would use `generateName` instead of `name` in the `metadata` section to generate a new `pipelinerun` name every time you created this object. But for the purposes of this lab, executing one pipeline run will be enough.
 
-. Create the pipelinerun:
+. Create the `pipelinerun`:
 +
 [source,sh]
 ----
@@ -1457,9 +1464,9 @@ oc create -f $HOME/pipeline/rhte-pipelinerun.yaml
 ----
 pipelinerun.tekton.dev/rhte-pipelinerun created
 ----
-
-. As before with TaskRuns creating the PipelineRun immediately starts the Pipeline.
-. List the current pipeline runs.
++
+As before with TaskRuns, creating the PipelineRun immediately starts the pipeline.
+. List the current pipeline runs:
 +
 [source,sh]
 ----
@@ -1473,7 +1480,7 @@ NAME               STARTED          DURATION   STATUS
 rhte-pipelinerun   37 seconds ago   ---        Running
 ----
 
-. Tail the logs for the pipeline run. These logs should look familiar - they are the combination of all the individual task runs that you executed earlier.
+. Tail the logs for the pipeline run. These logs should look familiar--they are the combination of all of the individual task runs that you executed earlier.
 +
 [source,sh]
 ----
@@ -1513,8 +1520,8 @@ tkn pr logs -f rhte-pipelinerun
 [deploy-image : patch] federateddeployment.types.kubefed.k8s.io/rhte-app patched
 ----
 
-. That's it. Your pipeline has executed.
-. Check the status of your pipeline run.
+. Your pipeline has executed.
+. Check the status of your pipeline run:
 +
 [source,sh]
 ----
@@ -1528,7 +1535,7 @@ NAME               STARTED         DURATION    STATUS
 rhte-pipelinerun   2 minutes ago   2 minutes   Succeeded
 ----
 
-. The Pipeline Run created a TaskRun object for every task in the pipeline. Check the task runs.
+. The PipelineRun created a TaskRun object for every task in the pipeline. Check the task runs:
 +
 [source,sh]
 ----
@@ -1549,9 +1556,9 @@ tag-image                             19 minutes ago   38 seconds   Succeeded
 s2i-nodejs                            1 hour ago       5 minutes    Succeeded
 ----
 +
-Notice the individual test task runs that you created earlier - and the 4 task runs starting with 'rhte-pipelinerun' that the pipeline created.
+Note the individual test task runs that you created earlier as well as the four task runs starting with `rhte-pipelinerun` that the pipeline created.
 
-. Double check that the application is now using version 2.0 of the image.
+. Double-check that the application is now using version 2.0 of the image:
 +
 [source,sh]
 ----
@@ -1565,23 +1572,25 @@ oc describe deployment rhte-app -n rhte-app-${GUID}|grep -i image
       IMAGE_TAG:     2.0
 ----
 
-. Finally in a Web Browser navigate to the route for the application both on cluster 1 and on cluster 2. The web application should show the following settings now:
-* You are on Cluster: Cluster 1
+. Finally, in a web browser, navigate to the route for the application both on cluster 1 and on cluster 2. The web application should show the following settings now:
+
+* You are on Cluster: *Cluster 1*
 * Image Tag for this application: *2.0*
-* Your project prefix: <Your GUID>
+* Your project prefix: *_<Your GUID>_*
 
-. And on cluster 2 (remember that the route on cluster 2 is http://rhte-app-<YOUR GUID>.apps.cluster-common.common.events.opentlc.com):
-* You are on Cluster: Cluster 2
+. And on cluster 2 (remember that the route on cluster 2 is `http://rhte-app-<YOUR GUID>.apps.cluster-common.common.events.opentlc.com`):
+
+* You are on Cluster: *Cluster 2*
 * Image Tag for this application: *2.0*
-* Your project prefix: common
+* Your project prefix: *common*
 
-== Wrapup
+== Wrap-up
 
-*Congratulations!* You made it all the way to the end of this lab.
+Congratulations! You have completed this lab.
 
-In this lab you
+In this lab, you:
 
-* Set up a Federated Cluster consisting of two OpenShift Clusters.
-* Deployed an application to two clusters using *KubeFed*.
+* Set up a Federated Cluster consisting of two OpenShift clusters
+* Deployed an application to two clusters using *KubeFed*
 * Registered for an account on a private Quay container image registry
-* Used *OpenShift Pipelines* to build an updated container image for the application and re-deploy it to both clusters using KubeFed and the Quay image registry
+* Used *OpenShift Pipelines* to build an updated container image for the application and redeploy it to both clusters using KubeFed and the Quay image registry
