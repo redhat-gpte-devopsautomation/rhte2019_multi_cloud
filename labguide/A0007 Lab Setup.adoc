@@ -12,7 +12,7 @@ In case you want to run this lab on your own cluster you need to set up KubeFed 
 +
 [source,sh]
 ----
-sudo ansible --connection=local all -i localhost, -m unarchive -a"src=https://github.com/kubernetes-sigs/kubefed/releases/download/v0.1.0-rc4/kubefedctl-0.1.0-rc4-linux-amd64.tgz remote_src=yes dest=/usr/bin mode=0775 owner=root group=root"
+sudo ansible --connection=local all -i localhost, -m unarchive -a"src=https://github.com/kubernetes-sigs/kubefed/releases/download/v0.1.0-rc6/kubefedctl-0.1.0-rc6-linux-amd64.tgz remote_src=yes dest=/usr/bin mode=0775 owner=root group=root"
 ----
 
 . Log into your OpenShift 4.1 cluster as a `cluster-admin` user (e.g. *system:admin*).
@@ -85,6 +85,45 @@ spec:
 EOF
 ----
 
+. Create the *KubeFedConfig* manifest:
++
+[source,sh]
+----
+cat << EOF >$HOME/setup/kubefedconfig.yaml
+apiVersion: core.kubefed.io/v1beta1
+kind: KubeFedConfig
+metadata:
+  name: kubefed
+  namespace: "kube-federation-system"
+spec:
+  scope: Cluster
+  syncController:
+    adoptResources: Enabled
+  clusterHealthCheck:
+    failureThreshold: 5
+    period: 20s
+    successThreshold: 1
+    timeout: 10s
+  controllerDuration:
+    availableDelay: 20s
+    unavailableDelay: 60s
+    clusterMonitorPeriod: 40s
+  leaderElect:
+    leaseDuration: 15s
+    renewDeadline: 10s
+    retryPeriod: 5s
+    resourceLock: configmaps
+  featureGates:
+  - name: PushReconciler
+    configuration: "Enabled"
+  - name: SchedulerPreferences
+    configuration: "Enabled"
+  - name: CrossClusterServiceDiscovery
+    configuration: "Enabled"
+  - name: FederatedIngress
+    configuration: "Enabled"
+EOF
+----
 . Create the *KubeFed* manifest:
 +
 [source,sh]
@@ -104,9 +143,9 @@ EOF
 +
 [source,sh]
 ----
-oc create -f $HOME/setup/kubefed_csc.yaml
-oc create -f $HOME/setup/kubefed_og.yaml
-oc create -f $HOME/setup/kubefed_sub.yaml
+oc apply -f $HOME/setup/kubefed_csc.yaml
+oc apply -f $HOME/setup/kubefed_og.yaml
+oc apply -f $HOME/setup/kubefed_sub.yaml
 ----
 
 . Wait until the *InstallPlan* has been created (repeat this command until it returns a value):
@@ -136,11 +175,12 @@ oc patch installplan $(oc get installplan -o name -n kube-federation-system | aw
 oc get csv kubefed-operator.v0.1.0 -o jsonpath='{.status.phase}' -n kube-federation-system
 ----
 
-. Create the KubeFed object in OpenShift
+. Create the KubeFed objects in OpenShift
 +
 [source,sh]
 ----
-oc create -f $HOME/setup/kubefed.yaml
+oc apply -f $HOME/setup/kubefedconfig.yaml
+oc apply -f $HOME/setup/kubefed.yaml
 ----
 
 . Federate the API Types you will use in the lab.
@@ -225,8 +265,8 @@ EOF
 +
 [source,sh]
 ----
-oc create -f $HOME/setup/pipelines_csc.yaml
-oc create -f $HOME/setup/pipelines_sub.yaml
+oc apply -f $HOME/setup/pipelines_csc.yaml
+oc apply -f $HOME/setup/pipelines_sub.yaml
 ----
 
 . Wait until the ClusterServiceVersion is deployed successfully (repeat the following command until PHASE is *Succeeded*)
@@ -240,7 +280,7 @@ oc get csv openshift-pipelines-operator.v0.5.2 -n openshift-operators
 +
 [source,sh]
 ----
-oc create -f $HOME/setup/pipelines.yaml
+oc apply -f $HOME/setup/pipelines.yaml
 ----
 
 . You are now ready to run the lab.
