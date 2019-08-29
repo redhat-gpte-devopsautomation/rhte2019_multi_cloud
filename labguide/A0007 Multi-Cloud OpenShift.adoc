@@ -77,7 +77,7 @@ echo "export SANDBOX_NUMBER=${SANDBOX_NUMBER}" >>$HOME/.bashrc
 ----
 export CLUSTER1=$(oc whoami --show-server | cut -f 2 -d ':' | cut -f 3 -d '/'  | sed 's/api.//')
 export CLUSTER2=cluster-common.common.events.opentlc.com
-echo "export CLUSTER1=cluster-${GUID}.${GUID}.sandbox${SANDBOX_NUMBER}.opentlc.com" >>$HOME/.bashrc
+echo "export CLUSTER1=$(oc whoami --show-server | cut -f 2 -d ':' | cut -f 3 -d '/'  | sed 's/api.//')" >>$HOME/.bashrc
 echo "export CLUSTER2=cluster-common.common.events.opentlc.com" >>$HOME/.bashrc
 ----
 
@@ -394,7 +394,7 @@ cd $HOME/rhte-app
 [source,sh]
 ----
 cat << EOF >$HOME/rhte-app/deployment.yaml
-apiVersion: types.kubefed.k8s.io/v1beta1
+apiVersion: types.kubefed.io/v1beta1
 kind: FederatedDeployment
 metadata:
   name: rhte-app
@@ -458,13 +458,13 @@ For example, on cluster 1 the `CLUSTER_NAME` environment variable will be set to
 +
 [source,sh]
 ----
-oc create -f $HOME/rhte-app/deployment.yaml -n rhte-app-${GUID}
+oc apply -f $HOME/rhte-app/deployment.yaml -n rhte-app-${GUID}
 ----
 +
 .Sample Output
 [source,texinfo]
 ----
-federateddeployment.types.kubefed.k8s.io/rhte-app created
+federateddeployment.types.kubefed.io/rhte-app created
 ----
 
 . Validate that both the Federated Deployment and the Deployment now exist:
@@ -477,11 +477,11 @@ oc get federateddeployments,deployments -n rhte-app-${GUID}
 .Sample Output
 [source,texinfo]
 ----
-NAME                                                AGE
-federateddeployment.types.kubefed.k8s.io/rhte-app   97s
+NAME                                            AGE
+federateddeployment.types.kubefed.io/rhte-app   46s
 
 NAME                             READY   UP-TO-DATE   AVAILABLE   AGE
-deployment.extensions/rhte-app   1/1     1            1           97s
+deployment.extensions/rhte-app   1/1     1            0           44s
 ----
 
 . An application needs the networking resources to be accessible. Create the definition for the federated service:
@@ -489,7 +489,7 @@ deployment.extensions/rhte-app   1/1     1            1           97s
 [source,sh]
 ----
 cat << EOF >$HOME/rhte-app/service.yaml
-apiVersion: types.kubefed.k8s.io/v1beta1
+apiVersion: types.kubefed.io/v1beta1
 kind: FederatedService
 metadata:
   name: rhte-app
@@ -513,13 +513,13 @@ EOF
 +
 [source,sh]
 ----
-oc create -f $HOME/rhte-app/service.yaml -n rhte-app-${GUID}
+oc apply -f $HOME/rhte-app/service.yaml -n rhte-app-${GUID}
 ----
 +
 .Sample Output
 [source,texinfo]
 ----
-federatedservice.types.kubefed.k8s.io/rhte-app created
+federatedservice.types.kubefed.io/rhte-app created
 ----
 
 . Finally, you need to create a Route to make the application accessible from the Internet. This lab uses standard Kubernetes objects--therefore, you create an `Ingress` resource, which OpenShift automatically converts into a `Route`.
@@ -529,7 +529,7 @@ Create the YAML definition of the `FederatedIngress` resource:
 [source,sh]
 ----
 cat << EOF >$HOME/rhte-app/ingress.yaml
-apiVersion: types.kubefed.k8s.io/v1beta1
+apiVersion: types.kubefed.io/v1beta1
 kind: FederatedIngress
 metadata:
   name: rhte-app
@@ -569,13 +569,13 @@ EOF
 +
 [source,sh]
 ----
-oc create -f $HOME/rhte-app/ingress.yaml -n rhte-app-${GUID}
+oc apply -f $HOME/rhte-app/ingress.yaml -n rhte-app-${GUID}
 ----
 +
 .Sample Output
 [source,texinfo]
 ----
-federatedingress.types.kubefed.k8s.io/rhte-app created
+federatedingress.types.kubefed.io/rhte-app created
 ----
 
 . Validate that in fact both an `ingress` and `route` resource were created:
@@ -757,7 +757,7 @@ EOF
 +
 [source,sh]
 ----
-oc create -f $HOME/pipeline/quay-secret.yaml -n rhte-pipeline
+oc apply -f $HOME/pipeline/quay-secret.yaml -n rhte-pipeline
 ----
 +
 .Sample Output
@@ -787,7 +787,7 @@ EOF
 +
 [source,sh]
 ----
-oc create -f pipeline-serviceaccount.yaml -n rhte-pipeline
+oc apply -f pipeline-serviceaccount.yaml -n rhte-pipeline
 ----
 +
 .Sample Output
@@ -829,7 +829,7 @@ Both the link:https://github.com/tektoncd/catalog[Tekton GitHub repository^] and
 +
 [source,sh]
 ----
-oc create -f https://raw.githubusercontent.com/openshift/pipelines-catalog/master/s2i-nodejs/s2i-nodejs-task.yaml -n rhte-pipeline
+oc apply -f https://raw.githubusercontent.com/openshift/pipelines-catalog/master/s2i-nodejs/s2i-nodejs-task.yaml -n rhte-pipeline
 ----
 +
 .Sample Output
@@ -842,7 +842,7 @@ task.tekton.dev/s2i-nodejs created
 +
 [source,sh]
 ----
-oc create -f https://raw.githubusercontent.com/tektoncd/catalog/master/openshift-client/openshift-client-task.yaml -n rhte-pipeline
+oc apply -f https://raw.githubusercontent.com/tektoncd/catalog/master/openshift-client/openshift-client-task.yaml -n rhte-pipeline
 ----
 +
 .Sample Output
@@ -880,7 +880,7 @@ EOF
 +
 [source,sh]
 ----
-oc create -f $HOME/pipeline/task-skopeo.yaml -n rhte-pipeline
+oc apply -f $HOME/pipeline/task-skopeo.yaml -n rhte-pipeline
 ----
 +
 .Sample Output
@@ -922,7 +922,7 @@ EOF
 +
 [source,sh]
 ----
-oc create -f $HOME/pipeline/task-patch.yaml -n rhte-pipeline
+oc apply -f $HOME/pipeline/task-patch.yaml -n rhte-pipeline
 ----
 +
 .Sample Output
@@ -974,7 +974,7 @@ EOF
 +
 [source,sh]
 ----
-oc create -f $HOME/pipeline/rhte-git.yaml -n rhte-pipeline
+oc apply -f $HOME/pipeline/rhte-git.yaml -n rhte-pipeline
 ----
 +
 .Sample Output
@@ -1004,7 +1004,7 @@ EOF
 +
 [source,sh]
 ----
-oc create -f $HOME/pipeline/rhte-image.yaml -n rhte-pipeline
+oc apply -f $HOME/pipeline/rhte-image.yaml -n rhte-pipeline
 ----
 +
 .Sample Output
@@ -1056,7 +1056,7 @@ EOF
 +
 [source,sh]
 ----
-oc create -f $HOME/pipeline/taskrun-1-s2i-build.yaml -n rhte-pipeline
+oc apply -f $HOME/pipeline/taskrun-1-s2i-build.yaml -n rhte-pipeline
 ----
 +
 .Sample Output
@@ -1140,7 +1140,7 @@ EOF
 +
 [source,sh]
 ----
-oc create -f $HOME/pipeline/taskrun-2-tag-image.yaml -n rhte-pipeline
+oc apply -f $HOME/pipeline/taskrun-2-tag-image.yaml -n rhte-pipeline
 ----
 +
 .Sample Output
@@ -1207,7 +1207,7 @@ EOF
 +
 [source,sh]
 ----
-oc create -f $HOME/pipeline/taskrun-3-skopeo.yaml -n rhte-pipeline
+oc apply -f $HOME/pipeline/taskrun-3-skopeo.yaml -n rhte-pipeline
 ----
 +
 .Sample Output
@@ -1280,7 +1280,7 @@ EOF
 +
 [source,sh]
 ----
-oc create -f $HOME/pipeline/taskrun-4-set-image.yaml -n rhte-pipeline
+oc apply -f $HOME/pipeline/taskrun-4-set-image.yaml -n rhte-pipeline
 ----
 +
 .Sample Output
@@ -1298,7 +1298,7 @@ tkn taskrun logs -f set-image
 .Sample Output
 [source,texinfo]
 ----
-[patch] federateddeployment.types.kubefed.k8s.io/rhte-app patched
+[patch] federateddeployment.types.kubefed.io/rhte-app patched
 ----
 
 .. Verify that the Federated Deployment has updated the deployment with the new image:
@@ -1412,7 +1412,7 @@ EOF
 +
 [source,sh]
 ----
-oc create -f $HOME/pipeline/rhte-pipeline.yaml -n rhte-pipeline
+oc apply -f $HOME/pipeline/rhte-pipeline.yaml -n rhte-pipeline
 ----
 +
 .Sample Output
@@ -1456,7 +1456,7 @@ EOF
 +
 [source,sh]
 ----
-oc create -f $HOME/pipeline/rhte-pipelinerun.yaml
+oc apply -f $HOME/pipeline/rhte-pipelinerun.yaml
 ----
 +
 .Sample Output
