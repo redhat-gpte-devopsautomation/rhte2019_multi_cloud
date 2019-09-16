@@ -1584,6 +1584,16 @@ oc describe deployment rhte-app -n rhte-app-${GUID}|grep -i image
 * Image Tag for this application: *2.0*
 * Your project prefix: *common*
 
+== Cleanup
+
+To conserve resources on the shared cluster for the next time we run this lab please delete your federated project:
+
++
+[source,sh]
+----
+oc delete project rhte-app-${GUID}
+----
+
 == Wrap-up
 
 Congratulations! You have completed this lab.
