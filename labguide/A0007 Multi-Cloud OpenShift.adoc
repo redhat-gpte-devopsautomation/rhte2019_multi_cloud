@@ -63,15 +63,7 @@ ssh lab-user@bastion.<GUID>.sandbox<SANDBOX_NUMBER>.opentlc.com
 echo ${GUID}
 ----
 
-. Set the `SANDBOX_NUMBER` variable to the number of your sandbox and save it in `.bashrc`:
-+
-[source,sh]
-----
-export SANDBOX_NUMBER=<your sandbox number>
-echo "export SANDBOX_NUMBER=${SANDBOX_NUMBER}" >>$HOME/.bashrc
-----
-
-. After you have the variables set properly, set up two variables for the two clusters and save them in `.bashrc`:
+. Set up two variables for the two clusters and save them in `.bashrc`:
 +
 [source,sh]
 ----
