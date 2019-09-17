@@ -830,11 +830,35 @@ oc apply -f https://raw.githubusercontent.com/openshift/pipelines-catalog/master
 task.tekton.dev/s2i-nodejs created
 ----
 
-. Create the OpenShift CLI task:
+. Create the OpenShift CLI task manifest YAML file:
 +
 [source,sh]
 ----
-oc apply -f https://raw.githubusercontent.com/tektoncd/catalog/master/openshift-client/openshift-client-task.yaml -n rhte-pipeline
+cat << EOF >$HOME/pipeline/task-openshift.yaml
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: openshift-client
+spec:
+  inputs:
+    params:
+      - name: ARGS
+        description: The OpenShift CLI arguments to run
+        default: help
+  steps:
+    - name: oc
+      image: quay.io/gpte-devops-automation/tekton-openshift-cli:0.5.2
+      command: ["/usr/local/bin/oc"]
+      args:
+        - "\${inputs.params.ARGS}"
+EOF
+----
+
+. Then create the task:
++
+[source,sh]
+----
+oc apply -f $HOME/pipeline/task-openshift.yaml -n rhte-pipeline
 ----
 +
 .Sample Output
@@ -842,6 +866,19 @@ oc apply -f https://raw.githubusercontent.com/tektoncd/catalog/master/openshift-
 ----
 task.tekton.dev/openshift-client created
 ----
+
+// . Create the OpenShift CLI task:
+// +
+// [source,sh]
+// ----
+// oc apply -f https://raw.githubusercontent.com/tektoncd/catalog/master/openshift-client/openshift-client-task.yaml -n rhte-pipeline
+// ----
+// +
+// .Sample Output
+// [source,texinfo]
+// ----
+// task.tekton.dev/openshift-client created
+// ----
 
 . You need a task to copy the image from the integrated OpenShift registry to an external registry, which in this case is Quay. There is a container image for this task already available. All you need to create is the task definition.
 +
