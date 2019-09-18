@@ -993,7 +993,7 @@ spec:
       default: strategic
   steps:
   - name: patch
-    image: quay.io/openshift-pipeline/openshift-cli:latest
+    image: quay.io/gpte-devops-automation/tekton-openshift-cli:0.5.2
     command: ['/usr/local/bin/oc-origin', 'patch', '\${inputs.params.RESOURCE}', '\${inputs.params.RESOURCE_NAME}', '-n', '\${inputs.params.NAMESPACE}', '--type', '\${inputs.params.TYPE}', '--patch', '\${inputs.params.PATCH}']
 EOF
 ----
