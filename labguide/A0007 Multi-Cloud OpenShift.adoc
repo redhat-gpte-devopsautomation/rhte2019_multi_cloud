@@ -336,7 +336,16 @@ You can enable additional API types using the `kubefedctl enable <type>` command
 
 == Set Up Federated Project and Federated Application
 
-. Start by creating a federated project. First, create a project on your first cluster:
+. Start by creating a federated project.
+. Create a directory for the YAML manifests:
++
+[source,sh]
+----
+mkdir $HOME/rhte-app
+cd $HOME/rhte-app
+----
+
+. Create a project on your first cluster:
 +
 [source,sh]
 ----
@@ -367,19 +376,60 @@ kubefedctl federate namespace rhte-app-${GUID}
 .Sample Output
 [source,texinfo,options=nowrap]
 ----
-I0815 00:22:52.983400   28879 federate.go:459] Resource to federate is a namespace. Given namespace will itself be the container for the federated namespace
-I0815 00:22:52.988064   28879 federate.go:488] Successfully created FederatedNamespace "rhte-app-b1fa/rhte-app-b1fa" from Namespace
+W0918 03:00:59.953183   17708 federate.go:410] Annotations defined for Namespace "rhte-app-52b2" will not appear in the template of the federated resource: map[openshift.io/description: openshift.io/display-name:RHTE 2019 Multi-Cloud Lab for GUID 52b2 openshift.io/requester:admin openshift.io/sa.scc.mcs:s0:c23,c12 openshift.io/sa.scc.supplemental-groups:1000530000/10000 openshift.io/sa.scc.uid-range:1000530000/10000]
+I0918 03:00:59.953287   17708 federate.go:474] Resource to federate is a namespace. Given namespace will itself be the container for the federated namespace
+I0918 03:00:59.956719   17708 federate.go:503] Successfully created FederatedNamespace "rhte-app-52b2/rhte-app-52b2" from Namespace
 ----
-+
-You could have also created the `FederatedNamespace` from a YAML definition. That way, you would not have needed to first create the project and then federate it. In the next few steps, you use the YAML approach. Using `kubefedctl federate` is a convenient way to federate resources that already exist.
 
-. Create a directory for the YAML manifests:
-+
-[source,sh]
-----
-mkdir $HOME/rhte-app
-cd $HOME/rhte-app
-----
+// [NOTE]
+// ====
+// You could have also created the `FederatedNamespace` from a YAML definition. In the next few steps, you use the YAML approach. Using `kubefedctl federate` is a convenient way to federate resources that already exist.
+
+// . Create the Federated Namespace YAML manifest:
+// +
+// [source,sh]
+// ----
+// cat << EOF >$HOME/rhte-app/namespace.yaml
+// apiVersion: types.kubefed.io/v1beta1
+// kind: FederatedNamespace
+// metadata:
+//   name: rhte-app-${GUID}
+//   namespace: rhte-app-${GUID}
+// spec:
+//   placement:
+//     clusterSelector:
+//       matchLabels: {}
+//   template:
+//     spec: {}
+// EOF
+// ----
+
+// . Create the Namespace.
+// +
+// [source,sh]
+// ----
+// oc create namespace rhte-app-${GUID}
+// ----
+// +
+// .Sample Output
+// [source,texinfo]
+// ----
+// namespace/rhte-app-wk created
+// ----
+
+// . Create the Federated Namespace.
+// +
+// [source,sh]
+// ----
+// oc apply -f $HOME/rhte-app/namespace.yaml -n rhte-app-${GUID}
+// ----
+// +
+// .Sample Output
+// [source,texinfo]
+// ----
+// federatednamespace.types.kubefed.io/rhte-app-xxxx created
+// ----
+// ====
 
 . Create the Federated Deployment for the application:
 +
@@ -1095,7 +1145,7 @@ taskrun.tekton.dev/s2i-nodejs created
 ----
 .. Taskruns are executed as Pods in OpenShift. Each step in the Task maps into a container in the pod. You can look at the pod itself, but OpenShift Pipelines also provides a CLI tool to directly look at logs and other properties of TaskRuns and PipelineRuns. Using the `tkn` tool, you can see the aggregate logs of all of the containers in the build.
 +
-Follow along the build:
+Follow along the build (it may take a few minutes for the pod to initialize because it needs to download 7 container images):
 +
 [source,sh]
 ----
