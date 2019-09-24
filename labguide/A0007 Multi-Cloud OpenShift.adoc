@@ -21,7 +21,7 @@ In this lab, you will:
 * Use *OpenShift Pipelines*--which are based on *Tekton Pipelines*--to build an updated container image for the application and redeploy it to both clusters using KubeFed and the Quay image registry
 
 [WARNING]
-Both KubeFed and OpenShift are Developer Preview at the moment. They can and will change before they are released. In addition, both products currently require a *cluster administrator* account. Hopefully, this will change before the final release.
+Both KubeFed and OpenShift Pipelines are Developer Preview at the moment. They can and will change before they are released. In addition, both products currently require a *cluster administrator* account. Hopefully, this will change before the final release.
 
 === Infrastructure
 
