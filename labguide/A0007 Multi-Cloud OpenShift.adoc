@@ -1667,7 +1667,6 @@ oc describe deployment rhte-app -n rhte-app-${GUID}|grep -i image
 
 To conserve resources on the shared cluster for the next time we run this lab please delete your federated project:
 
-+
 [source,sh]
 ----
 oc delete project rhte-app-${GUID}
