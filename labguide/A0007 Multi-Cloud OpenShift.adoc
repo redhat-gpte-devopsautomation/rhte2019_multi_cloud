@@ -268,7 +268,7 @@ Events:  <none>
 ----
 +
 // Unjoin if necessary
-// kubefedctl unjoin cluster2 --host-cluster-context cluster1 --cluster-context cluster2 --v=2
+// kubefedctl unjoin cluster2-${GUID} --host-cluster-context cluster1-${GUID} --cluster-context cluster2-${GUID} --v=2
 
 . Join the second cluster to the first cluster to create your federated environment:
 +
@@ -1665,11 +1665,13 @@ oc describe deployment rhte-app -n rhte-app-${GUID}|grep -i image
 
 == Cleanup
 
-To conserve resources on the shared cluster for the next time we run this lab please delete your federated project:
+To conserve resources on the shared cluster for the next time we run this lab please delete your federated project and remove the shared cluster from your environment:
 
 [source,sh]
 ----
 oc delete project rhte-app-${GUID}
+
+kubefedctl unjoin cluster2-${GUID} --host-cluster-context cluster1-${GUID} --cluster-context cluster2-${GUID} --v=2
 ----
 
 == Wrap-up
