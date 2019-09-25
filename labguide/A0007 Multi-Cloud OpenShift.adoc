@@ -18,32 +18,35 @@ In this lab, you will:
 * Use *KubeFed* to set up a federated cluster consisting of two OpenShift clusters
 * Deploy an application to two clusters using federated API objects
 * Register for an account on a private *Quay* container registry
-* Use *OpenShift Pipelines*--which are based on *Tekton Pipelines*--to build an updated container image for the application and redeploy it to both clusters using KubeFed and the Quay image registry
+* Use *OpenShift Pipelines* -- which are based on *Tekton Pipelines* -- to build an updated container image for the application and redeploy it to both clusters using KubeFed and the Quay image registry
 
 [WARNING]
-Both KubeFed and OpenShift Pipelines are Developer Preview at the moment. They can and will change before they are released. In addition, both products currently require a *cluster administrator* account. Hopefully, this will change before the final release.
+Both Kube Federation and OpenShift Pipelines are Developer Preview at the moment. They can and will change before they are released. In addition, both products currently require a *cluster administrator* account. Hopefully, this will change before the final release.
 
 === Infrastructure
 
-You have one primary cluster where you will do all of the work. On that cluster, you have cluster-admin privileges. That cluster already has KubeFed deployed. Only the source cluster needs KubeFed deployed--all other clusters are managed from the primary cluster. This makes adding clusters to a federated cluster very easy.
+You have two clusters available. You have one primary cluster where you will do all of the work. That cluster already has Kube Federation and OpenShift Pipelines deployed. Only the source cluster needs Kube Federation deployed -- all other clusters are managed from the primary cluster. This makes adding clusters to a federated cluster very easy. You have cluster-admin privileges on both clusters. 
 
-There is a second, shared, cluster for all students to deploy your applications to.
+You will only use the second cluster as a target to deploy your application to via Kube Federation.
 
 === Prerequisites
 
-. Get a GUID from the GUIDGrabber. This is the GUID of your personal cluster.
-* Cluster 1 has a bastion VM that you use to execute all tasks.
-* GUIDGrabber will show the command to connect to the bastion VM.
-* Your cluster runs in a Sandbox. Make a note of the Sandbox Number.
+. Open two private browser windows.
+. In both windows navigate to https://bit.ly/A0007.
+. In the first window request the lab `A0007-A MultiCloud OpenShift`
+. In the second window request the lab `A0007-B MultiCloud OpenShift`
+. Each window will show you the GUID (a 4 character string). Make note of both GUIDs.
+. Each window will also show you the `ssh` command to connect to the cluster. Make note of the Sandbox number that is part of that command.
 ** For example, if GUIDGrabber shows the following command:
 +
 [source,sh]
 ----
-ssh lab-user@bastion.b1fa.sandbox23.opentlc.com
+ssh lab-user@bastion.96db.sandbox810.opentlc.com
 ----
 +
-this means that your GUID is `b1fa` and your Sandbox Number is `23`.
-. There is a second, shared, cluster. You do _not_ receive a GUID for the second cluster.
+this means that your GUID is `96db` and your Sandbox Number is `810`.
+. Access the Lab Environment via cluster 1 (A0007-A Item)
+* Cluster 1 has a bastion VM that you use to execute all tasks.
 
 === Log into Bastion VM for Cluster 1
 
@@ -63,14 +66,28 @@ ssh lab-user@bastion.<GUID>.sandbox<SANDBOX_NUMBER>.opentlc.com
 echo ${GUID}
 ----
 
+. Set up two environment variables for your second cluster and save them in `.bashrc`:
++
+[source,sh]
+----
+export GUID2= < Your Second Cluster's GUID >
+export SANDBOX2 = < Your Second Cluster's Sandbox Number>
+# for example
+# export GUID2=r2d2
+# export SANDBOX2=42
+
+echo "export GUID2=${GUID2}" >>$HOME/.bashrc
+echo "export SANDBOX2=${SANDBOX2}" >> $HOME/.bashrc
+----
+
 . Set up two variables for the two clusters and save them in `.bashrc`:
 +
 [source,sh]
 ----
 export CLUSTER1=$(oc whoami --show-server | cut -f 2 -d ':' | cut -f 3 -d '/'  | sed 's/api.//')
-export CLUSTER2=cluster-common.common.events.opentlc.com
+export CLUSTER2=cluster-${GUID2}.${GUID2}.sandbox${SANDBOX2}.opentlc.com
 echo "export CLUSTER1=$(oc whoami --show-server | cut -f 2 -d ':' | cut -f 3 -d '/'  | sed 's/api.//')" >>$HOME/.bashrc
-echo "export CLUSTER2=cluster-common.common.events.opentlc.com" >>$HOME/.bashrc
+echo "export CLUSTER2=cluster-${GUID2}.${GUID2}.sandbox${SANDBOX2}.opentlc.com" >>$HOME/.bashrc
 ----
 
 . Log into OpenShift as `admin` with password `rhte2019`. This is a user with full cluster administration privileges (but not system:admin):
@@ -96,14 +113,14 @@ Using project "default".
 
 [NOTE]
 ====
-To save resources, your personal cluster consists of only one master and one worker node. This is obviously not a supported configuration for a production cluster, but it is sufficient for the purposes of this lab.
+To save resources, your clusters consists of only one master and two small worker nodes. This is obviously not a supported configuration for a production cluster, but it is sufficient for the purposes of this lab.
 ====
 
 == Set Up Federated Cluster
 
-KubeFed requires clusters to be registered. The way this works is that an initial federated cluster is created. Then a second cluster is joined to this initial cluster.
+Kube Federation requires clusters to be registered. The way this works is that an initial federated cluster is created. Then a second cluster is joined to this initial cluster.
 
-After this step is completed, you can create a federated project to deploy your federated application into. KubeFed takes care of distributing the Kubernetes objects that make up this application to every cluster in the federated cluster.
+After this step is completed, you can create a federated project to deploy your federated application into. Kube Federation takes care of distributing the Kubernetes objects that make up this application to every cluster in the federated cluster.
 
 . Validate the Kubernetes context you are using:
 +
@@ -115,12 +132,12 @@ oc config get-contexts
 .Sample Output
 [source,texinfo,options=nowrap]
 ----
-CURRENT   NAME                                                             CLUSTER                                            AUTHINFO                                                 NAMESPACE
-          admin                                                            cluster-b1fa                                       admin
-*         default/api-cluster-b1fa-b1fa-sandbox23-opentlc-com:6443/admin   api-cluster-b1fa-b1fa-sandbox23-opentlc-com:6443   admin/api-cluster-b1fa-b1fa-sandbox23-opentlc-com:6443   default
+CURRENT   NAME                                                              CLUSTER                                             AUTHINFO                                                  NAMESPACE
+          admin                                                             cluster-96db                                        admin
+*         default/api-cluster-96db-96db-sandbox810-opentlc-com:6443/admin   api-cluster-96db-96db-sandbox810-opentlc-com:6443   admin/api-cluster-96db-96db-sandbox810-opentlc-com:6443   default
 ----
 +
-You use the `default/api-cluster-b1fa-b1fa-sandbox23-opentlc-com:6443/admin` context for your initial cluster.
+You use the `default/api-cluster-96db-96db-sandbox810-opentlc-com:6443/admin` context for your initial cluster.
 . The context name is a bit difficult to remember. To make it easier, rename the context to `cluster1-${GUID}`:
 +
 [source,sh]
@@ -131,17 +148,12 @@ oc config rename-context $(oc config current-context) cluster1-${GUID}
 .Sample Output
 [source,texinfo]
 ----
-Context "default/api-cluster-b1fa-b1fa-sandbox23-opentlc-com:6443/admin" renamed to "cluster1-b1fa".
+Context "default/api-cluster-96db-96db-sandbox810-opentlc-com:6443/admin" renamed to "cluster1-96db".
 ----
 
 . To join the clusters, you need to also create a context for the second cluster. By logging into the second cluster, the `$HOME/.kube/config` file in your first cluster VM is updated with the context for the second cluster. That context contains the information about how to access the second cluster.
 +
 Log into the second cluster as user `admin`:
-+
-[WARNING]
-====
-Do not run any commands not listed in this lab on cluster 2. This is a shared cluster, and you might break things for your fellow students.
-====
 +
 [source,sh]
 ----
@@ -166,10 +178,10 @@ oc config get-contexts
 .Sample Output
 [source,texinfo,options=nowrap]
 ----
-CURRENT   NAME            CLUSTER                                             AUTHINFO                                                  NAMESPACE
-          admin           cluster-b1fa                                        admin
-          cluster1-b1fa   api-cluster-b1fa-b1fa-sandbox23-opentlc-com:6443    admin/api-cluster-b1fa-b1fa-sandbox23-opentlc-com:6443    default
-*         cluster2-b1fa   api-cluster-common-common-events-opentlc-com:6443   admin/api-cluster-common-common-events-opentlc-com:6443   default
+CURRENT   NAME            CLUSTER                                              AUTHINFO                                                   NAMESPACE
+          admin           cluster-96db                                         admin
+          cluster1-96db   api-cluster-96db-96db-sandbox810-opentlc-com:6443    admin/api-cluster-96db-96db-sandbox810-opentlc-com:6443    default
+*         cluster2-96db   api-cluster-2ce0-2ce0-sandbox1303-opentlc-com:6443   admin/api-cluster-2ce0-2ce0-sandbox1303-opentlc-com:6443   default
 ----
 
 . Switch your active context back to cluster 1. This is the same as logging back into the first cluster:
@@ -191,23 +203,19 @@ kubefedctl join cluster1-${GUID} --host-cluster-context cluster1-${GUID} --clust
 .Sample Output
 [source,texinfo]
 ----
-I0814 08:12:13.384334   23391 join.go:159] Args and flags: name cluster1-b1fa, host: cluster1-b1fa, host-system-namespace: kube-federation-system, kubeconfig: , cluster-context: cluster1-b1fa, secret-name: , dry-run: false
-I0814 08:12:13.564995   23391 join.go:219] Performing preflight checks.
-I0814 08:12:13.566980   23391 join.go:225] Creating kube-federation-system namespace in joining cluster
-I0814 08:12:13.569479   23391 join.go:352] Already existing kube-federation-system namespace
-I0814 08:12:13.569495   23391 join.go:233] Created kube-federation-system namespace in joining cluster
-I0814 08:12:13.569509   23391 join.go:236] Creating cluster credentials secret
-I0814 08:12:13.569595   23391 join.go:372] Creating service account in joining cluster: cluster1-b1fa
-I0814 08:12:13.576169   23391 join.go:382] Created service account: cluster1-b1fa-cluster1-b1fa in joining cluster: cluster1-b1fa
-I0814 08:12:13.576185   23391 join.go:410] Creating cluster role and binding for service account: cluster1-b1fa-cluster1-b1fa in joining cluster: cluster1-b1fa
-I0814 08:12:13.589596   23391 join.go:419] Created cluster role and binding for service account: cluster1-b1fa-cluster1-b1fa in joining cluster: cluster1-b1fa
-I0814 08:12:13.589616   23391 join.go:423] Creating secret in host cluster: cluster1-b1fa
-I0814 08:12:14.600195   23391 join.go:812] Using secret named: cluster1-b1fa-cluster1-b1fa-token-r7vc2
-I0814 08:12:14.602977   23391 join.go:855] Created secret in host cluster named: cluster1-b1fa-4jjz8
-I0814 08:12:14.602993   23391 join.go:432] Created secret in host cluster: cluster1-b1fa
-I0814 08:12:14.603004   23391 join.go:246] Cluster credentials secret created
-I0814 08:12:14.603029   23391 join.go:248] Creating federated cluster resource
-I0814 08:12:14.609625   23391 join.go:257] Created federated cluster resource
+I0925 10:38:02.422522   18050 join.go:159] Args and flags: name cluster1-96db, host: cluster1-96db, host-system-namespace: kube-federation-system, kubeconfig: , cluster-context: cluster1-96db, secret-name: , dry-run: false
+I0925 10:38:02.634050   18050 join.go:238] Performing preflight checks.
+I0925 10:38:02.636165   18050 join.go:244] Creating kube-federation-system namespace in joining cluster
+I0925 10:38:02.638459   18050 join.go:377] Already existing kube-federation-system namespace
+I0925 10:38:02.638476   18050 join.go:252] Created kube-federation-system namespace in joining cluster
+I0925 10:38:02.638488   18050 join.go:398] Creating service account in joining cluster: cluster1-96db
+I0925 10:38:02.642754   18050 join.go:408] Created service account: cluster1-96db-cluster1-96db in joining cluster: cluster1-96db
+I0925 10:38:02.642770   18050 join.go:436] Creating cluster role and binding for service account: cluster1-96db-cluster1-96db in joining cluster: cluster1-96db
+I0925 10:38:02.658483   18050 join.go:445] Created cluster role and binding for service account: cluster1-96db-cluster1-96db in joining cluster: cluster1-96db
+I0925 10:38:02.658509   18050 join.go:804] Creating cluster credentials secret in host cluster
+I0925 10:38:03.671136   18050 join.go:830] Using secret named: cluster1-96db-cluster1-96db-token-8vl2f
+I0925 10:38:03.673661   18050 join.go:873] Created secret in host cluster named: cluster1-96db-qx5db
+I0925 10:38:03.686498   18050 join.go:280] Created federated cluster resource
 ----
 
 . Validate that the cluster is now registered as a federated cluster:
@@ -221,7 +229,7 @@ oc get kubefedclusters -n kube-federation-system
 [source,texinfo]
 ----
 NAME            READY   AGE
-cluster1-b1fa   True    35s
+cluster1-96db   True    35s
 ----
 +
 If the value in column `READY` is not yet `True`, repeat the command until it is.
@@ -236,34 +244,35 @@ oc describe kubefedcluster cluster1-${GUID}  -n kube-federation-system
 .Sample Output
 [source,texinfo]
 ----
-Name:         cluster1-b1fa
+Name:         cluster1-96db
 Namespace:    kube-federation-system
 Labels:       <none>
 Annotations:  <none>
-API Version:  core.kubefed.k8s.io/v1beta1
+API Version:  core.kubefed.io/v1beta1
 Kind:         KubeFedCluster
 Metadata:
-  Creation Timestamp:  2019-08-14T08:12:14Z
+  Creation Timestamp:  2019-09-25T10:38:03Z
   Generation:          1
-  Resource Version:    21889
-  Self Link:           /apis/core.kubefed.k8s.io/v1beta1/namespaces/kube-federation-system/kubefedclusters/cluster1-b1fa
-  UID:                 3971eefb-be6b-11e9-a879-06e77dfe2d88
+  Resource Version:    23808
+  Self Link:           /apis/core.kubefed.io/v1beta1/namespaces/kube-federation-system/kubefedclusters/cluster1-96db
+  UID:                 8da5bd13-df80-11e9-9960-06b092a9a3a8
 Spec:
-  API Endpoint:  https://api.cluster-b1fa.b1fa.sandbox23.opentlc.com:6443
+  API Endpoint:  https://api.cluster-96db.96db.sandbox810.opentlc.com:6443
 
 [...]
 
 Status:
   Conditions:
-    Last Probe Time:       2019-08-14T08:12:58Z
-    Last Transition Time:  2019-08-14T08:12:58Z
+    Last Probe Time:       2019-09-25T10:38:17Z
+    Last Transition Time:  2019-09-25T10:38:17Z
     Message:               /healthz responded with ok
     Reason:                ClusterReady
     Status:                True
     Type:                  Ready
-  Region:                  ap-southeast-1
+  Region:                  eu-west-1
   Zones:
-    ap-southeast-1a
+    eu-west-1a
+    eu-west-1b
 Events:  <none>
 ----
 +
@@ -280,22 +289,18 @@ kubefedctl join cluster2-${GUID} --host-cluster-context cluster1-${GUID} --clust
 .Sample Output
 [source,texinfo]
 ----
-I0814 08:13:33.489975   23438 join.go:159] Args and flags: name cluster2-b1fa, host: cluster1-b1fa, host-system-namespace: kube-federation-system, kubeconfig: , cluster-context: cluster2-b1fa, secret-name: , dry-run: false
-I0814 08:13:33.925875   23438 join.go:219] Performing preflight checks.
-I0814 08:13:35.094411   23438 join.go:225] Creating kube-federation-system namespace in joining cluster
-I0814 08:13:35.555457   23438 join.go:233] Created kube-federation-system namespace in joining cluster
-I0814 08:13:35.555482   23438 join.go:236] Creating cluster credentials secret
-I0814 08:13:35.555498   23438 join.go:372] Creating service account in joining cluster: cluster2-b1fa
-I0814 08:13:35.785497   23438 join.go:382] Created service account: cluster2-b1fa-cluster1-b1fa in joining cluster: cluster2-b1fa
-I0814 08:13:35.785519   23438 join.go:410] Creating cluster role and binding for service account: cluster2-b1fa-cluster1-b1fa in joining cluster: cluster2-b1fa
-I0814 08:13:36.707235   23438 join.go:419] Created cluster role and binding for service account: cluster2-b1fa-cluster1-b1fa in joining cluster: cluster2-b1fa
-I0814 08:13:36.707257   23438 join.go:423] Creating secret in host cluster: cluster1-b1fa
-I0814 08:13:37.394448   23438 join.go:812] Using secret named: cluster2-b1fa-cluster1-b1fa-token-xzndg
-I0814 08:13:37.400751   23438 join.go:855] Created secret in host cluster named: cluster2-b1fa-tpls2
-I0814 08:13:37.400769   23438 join.go:432] Created secret in host cluster: cluster1-b1fa
-I0814 08:13:37.400781   23438 join.go:246] Cluster credentials secret created
-I0814 08:13:37.400790   23438 join.go:248] Creating federated cluster resource
-I0814 08:13:37.412103   23438 join.go:257] Created federated cluster resource
+I0925 10:39:25.741292   18098 join.go:159] Args and flags: name cluster2-96db, host: cluster1-96db, host-system-namespace: kube-federation-system, kubeconfig: , cluster-context: cluster2-96db, secret-name: , dry-run: false
+I0925 10:39:26.188121   18098 join.go:238] Performing preflight checks.
+I0925 10:39:26.242611   18098 join.go:244] Creating kube-federation-system namespace in joining cluster
+I0925 10:39:26.248670   18098 join.go:252] Created kube-federation-system namespace in joining cluster
+I0925 10:39:26.248695   18098 join.go:398] Creating service account in joining cluster: cluster2-96db
+I0925 10:39:26.257536   18098 join.go:408] Created service account: cluster2-96db-cluster1-96db in joining cluster: cluster2-96db
+I0925 10:39:26.257555   18098 join.go:436] Creating cluster role and binding for service account: cluster2-96db-cluster1-96db in joining cluster: cluster2-96db
+I0925 10:39:26.285676   18098 join.go:445] Created cluster role and binding for service account: cluster2-96db-cluster1-96db in joining cluster: cluster2-96db
+I0925 10:39:26.285702   18098 join.go:804] Creating cluster credentials secret in host cluster
+I0925 10:39:26.300492   18098 join.go:830] Using secret named: cluster2-96db-cluster1-96db-token-hwv9h
+I0925 10:39:26.305256   18098 join.go:873] Created secret in host cluster named: cluster2-96db-ftwcc
+I0925 10:39:26.319353   18098 join.go:280] Created federated cluster resource
 ----
 
 . Once again, verify that the cluster is ready, and describe the properties of the cluster:
@@ -309,8 +314,8 @@ oc get kubefedclusters -n kube-federation-system
 [source,texinfo]
 ----
 NAME            READY   AGE
-cluster1-b1fa   True    102s
-cluster2-b1fa   True    19s
+cluster1-96db   True    102s
+cluster2-96db   True    19s
 ----
 +
 [source,sh]
@@ -332,7 +337,7 @@ oc describe kubefedcluster cluster2-${GUID} -n kube-federation-system
 After being registered, the cluster now understands the federated type. If you create a federated resource, it is automatically distributed over all of the clusters.
 +
 [TIP]
-You can enable additional API types using the `kubefedctl enable <type>` command--for example, `kubefedctl enable PersistentVolumeClaim`.
+You can enable additional API types using the `kubefedctl enable <type>` command -- for example, `kubefedctl enable PersistentVolumeClaim`.
 
 == Set Up Federated Project and Federated Application
 
@@ -376,9 +381,9 @@ kubefedctl federate namespace rhte-app-${GUID}
 .Sample Output
 [source,texinfo,options=nowrap]
 ----
-W0918 03:00:59.953183   17708 federate.go:410] Annotations defined for Namespace "rhte-app-52b2" will not appear in the template of the federated resource: map[openshift.io/description: openshift.io/display-name:RHTE 2019 Multi-Cloud Lab for GUID 52b2 openshift.io/requester:admin openshift.io/sa.scc.mcs:s0:c23,c12 openshift.io/sa.scc.supplemental-groups:1000530000/10000 openshift.io/sa.scc.uid-range:1000530000/10000]
-I0918 03:00:59.953287   17708 federate.go:474] Resource to federate is a namespace. Given namespace will itself be the container for the federated namespace
-I0918 03:00:59.956719   17708 federate.go:503] Successfully created FederatedNamespace "rhte-app-52b2/rhte-app-52b2" from Namespace
+W0925 10:40:26.256970   18188 federate.go:410] Annotations defined for Namespace "rhte-app-96db" will not appear in the template of the federated resource: map[openshift.io/description: openshift.io/display-name:RHTE 2019 Multi-Cloud Lab for GUID 96db openshift.io/requester:admin openshift.io/sa.scc.mcs:s0:c23,c12 openshift.io/sa.scc.supplemental-groups:1000530000/10000 openshift.io/sa.scc.uid-range:1000530000/10000]
+I0925 10:40:26.257059   18188 federate.go:474] Resource to federate is a namespace. Given namespace will itself be the container for the federated namespace
+I0925 10:40:26.260760   18188 federate.go:503] Successfully created FederatedNamespace "rhte-app-96db/rhte-app-96db" from Namespace
 ----
 
 // [NOTE]
@@ -478,13 +483,13 @@ spec:
     - path: /spec/template/spec/containers/0/env/0/value
       value: "Cluster 1"
     - path: /spec/template/spec/containers/0/env/2/value
-      value: $GUID
+      value: "${GUID}"
   - clusterName: cluster2-${GUID}
     clusterOverrides:
     - path: /spec/template/spec/containers/0/env/0/value
       value: "Cluster 2"
     - path: /spec/template/spec/containers/0/env/2/value
-      value: "common"
+      value: "${GUID}"
 EOF
 ----
 
@@ -564,7 +569,7 @@ oc apply -f $HOME/rhte-app/service.yaml -n rhte-app-${GUID}
 federatedservice.types.kubefed.io/rhte-app created
 ----
 
-. Finally, you need to create a Route to make the application accessible from the Internet. This lab uses standard Kubernetes objects--therefore, you create an `Ingress` resource, which OpenShift automatically converts into a `Route`.
+. Finally, you need to create a Route to make the application accessible from the Internet. This lab uses standard Kubernetes objects -- therefore, you create an `Ingress` resource, which OpenShift automatically converts into a `Route`.
 +
 Create the YAML definition of the `FederatedIngress` resource:
 +
@@ -630,14 +635,14 @@ oc get ingresses,routes -n rhte-app-${GUID}
 .Sample Output
 [source,texinfo,options=nowrap]
 ----
-NAME                          HOSTS                                                        ADDRESS   PORTS   AGE
-ingress.extensions/rhte-app   rhte-app-b1fa.apps.cluster-b1fa.b1fa.sandbox23.opentlc.com             80      11s
+NAME                          HOSTS                                                         ADDRESS   PORTS   AGE
+ingress.extensions/rhte-app   rhte-app-96db.apps.cluster-96db.96db.sandbox810.opentlc.com             80      5s
 
-NAME                                      HOST/PORT                                                    PATH   SERVICES   PORT   TERMINATION   WILDCARD
-route.route.openshift.io/rhte-app-jqzv4   rhte-app-b1fa.apps.cluster-b1fa.b1fa.sandbox23.opentlc.com   /      rhte-app   3000                 None
+NAME                                      HOST/PORT                                                     PATH   SERVICES   PORT   TERMINATION   WILDCARD
+route.route.openshift.io/rhte-app-klzs6   rhte-app-96db.apps.cluster-96db.96db.sandbox810.opentlc.com   /      rhte-app   3000                 None
 ----
 
-. In a browser window, navigate to the route displayed--in the example above, `rhte-app-b1fa.apps.cluster-b1fa.b1fa.sandbox23.opentlc.com`&#8212;and validate that the application works and does not tell you which cluster it is running on. You should see `Placeholder for` for all three lines of text.
+. In a browser window, navigate to the route displayed--in the example above, `rhte-app-96db.apps.cluster-96db.96db.sandbox810.opentlc.com`&#8212;and validate that the application works and does not tell you which cluster it is running on. You should see `Placeholder for` for all three lines of text.
 
 . As a final step, verify that the application is running in the second cluster as well.
 +
@@ -658,22 +663,22 @@ oc get all,ingresses -n rhte-app-${GUID}
 [source,texinfo,options=nowrap]
 ----
 NAME                            READY   STATUS    RESTARTS   AGE
-pod/rhte-app-5895bfcf6c-z8pxh   1/1     Running   0          4m22s
+pod/rhte-app-66d5b4696b-9k2nd   1/1     Running   0          2m4s
 
-NAME               TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)    AGE
-service/rhte-app   ClusterIP   172.30.193.210   <none>        3000/TCP   2m9s
+NAME               TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)    AGE
+service/rhte-app   ClusterIP   172.30.8.192   <none>        3000/TCP   83s
 
 NAME                       READY   UP-TO-DATE   AVAILABLE   AGE
-deployment.apps/rhte-app   1/1     1            1           4m22s
+deployment.apps/rhte-app   1/1     1            1           2m4s
 
 NAME                                  DESIRED   CURRENT   READY   AGE
-replicaset.apps/rhte-app-5895bfcf6c   1         1         1       4m23s
+replicaset.apps/rhte-app-66d5b4696b   1         1         1       2m4s
 
-NAME                                      HOST/PORT                                                     PATH   SERVICES   PORT   TERMINATION   WILDCARD
-route.route.openshift.io/rhte-app-zhlmf   rhte-app-b1fa.apps.cluster-common.common.events.opentlc.com   /      rhte-app   3000                 None
+NAME                                      HOST/PORT                                                      PATH   SERVICES   PORT   TERMINATION   WILDCARD
+route.route.openshift.io/rhte-app-czdqj   rhte-app-96db.apps.cluster-2ce0.2ce0.sandbox1303.opentlc.com   /      rhte-app   3000                 None
 
-NAME                          HOSTS                                                         ADDRESS   PORTS   AGE
-ingress.extensions/rhte-app   rhte-app-b1fa.apps.cluster-common.common.events.opentlc.com             80      93s
+NAME                          HOSTS                                                          ADDRESS   PORTS   AGE
+ingress.extensions/rhte-app   rhte-app-96db.apps.cluster-2ce0.2ce0.sandbox1303.opentlc.com             80      60s
 ----
 . Note that all resources are available in cluster 2 as well, and that the route and ingress point to the domain in cluster 2.
 
@@ -690,7 +695,7 @@ oc set env deployment rhte-app -n rhte-app-${GUID} --list
 # deployments/rhte-app, container rhte-app
 CLUSTER_NAME=Cluster 2
 IMAGE_TAG=To be overwritten
-PREFIX=common
+PREFIX=2ce0
 ----
 
 . Log back into cluster 1:
@@ -1188,7 +1193,7 @@ oc get is -n rhte-app-${GUID}
 [source,texinfo,options=nowrap]
 ----
 NAME       IMAGE REPOSITORY                                                          TAGS     UPDATED
-rhte-app   image-registry.openshift-image-registry.svc:5000/rhte-app-b1fa/rhte-app   latest   5 minutes ago
+rhte-app   image-registry.openshift-image-registry.svc:5000/rhte-app-96db/rhte-app   latest   16 seconds ago
 ----
 
 . Next, test the Image Tagging task.
@@ -1238,8 +1243,6 @@ tkn taskrun logs -f tag-image
 [source,texinfo]
 ----
 [oc] Tag rhte-app:1.0 set to rhte-app@sha256:c6434fa736d2a16a3e439e44c33aef1dce4fd1e824782dfe082463404f231dd2.
-
-[nop] Build successful
 ----
 
 .. Validate that the image now has tag 1.0:
@@ -1253,7 +1256,7 @@ oc get is -n rhte-app-${GUID}
 [source,texinfo,options=nowrap]
 ----
 NAME       IMAGE REPOSITORY                                                          TAGS         UPDATED
-rhte-app   image-registry.openshift-image-registry.svc:5000/rhte-app-b1fa/rhte-app   1.0,latest   About a minute ago
+rhte-app   image-registry.openshift-image-registry.svc:5000/rhte-app-96db/rhte-app   1.0,latest   30 seconds ago
 ----
 
 . Next, test the Image Copying task.
@@ -1262,7 +1265,7 @@ rhte-app   image-registry.openshift-image-registry.svc:5000/rhte-app-b1fa/rhte-a
 [source,sh]
 ----
 export TAG=1.0
-export QUAY_USER=wkulhanek
+export QUAY_USER=< Your Quay User ID>
 
 cat << EOF >$HOME/pipeline/taskrun-3-skopeo.yaml
 apiVersion: tekton.dev/v1alpha1
@@ -1321,12 +1324,12 @@ tkn taskrun logs -f copy-to-quay
 .. In your web browser, navigate to link:https://quay-common.apps.cluster-common.common.events.opentlc.com[https://quay-common.apps.cluster-common.common.events.opentlc.com^] and check that your repository now has an image in it with tag 1.0.
 
 . Finally, test setting the image in the Federated Deployment.
-.. Create the TaskRun definition:
+.. Create the TaskRun definition (again make sure to set QUAY_USER to your Quay User ID):
 +
 [source,sh]
 ----
 export TAG=1.0
-export QUAY_USER=wkulhanek
+export QUAY_USER=< Your Quay User ID>
 
 cat << EOF >$HOME/pipeline/taskrun-4-set-image.yaml
 apiVersion: tekton.dev/v1alpha1
@@ -1401,7 +1404,7 @@ oc describe deployment rhte-app -n rhte-app-${GUID}|grep -i image
 oc get route -n rhte-app-${GUID}
 ----
 +
-.. Using the route to your application, validate in a web browser that the placeholder application has been replaced with the real application. This application now reads the Environment Variables from the Pod and displays them. You should see the following:
+.. Using the route to your application, validate in a web browser that the placeholder application has been replaced with the real application. This application now reads the Environment Variables from the Pod and displays them. It may take a few seconds for the deployment to roll out. You should see the following:
 
 * You are on Cluster: *Cluster 1*
 * Image Tag for this application: *1.0*
@@ -1423,7 +1426,7 @@ In the future, there may be a way to set this via a PipelineResource--but curren
 [source,sh]
 ----
 export TAG=2.0
-export QUAY_USER=wkulhanek
+export QUAY_USER=< Your Quay User ID >
 
 cat << EOF >$HOME/pipeline/rhte-pipeline.yaml
 apiVersion: tekton.dev/v1alpha1
@@ -1657,22 +1660,25 @@ oc describe deployment rhte-app -n rhte-app-${GUID}|grep -i image
 * Image Tag for this application: *2.0*
 * Your project prefix: *_<Your GUID>_*
 
-. And on cluster 2 (remember that the route on cluster 2 is `http://rhte-app-<YOUR GUID>.apps.cluster-common.common.events.opentlc.com`):
+. Retrieve your route from Cluster 2:
++
+[source,sh]
+----
+oc --context cluster2-$GUID -n rhte-app-$GUID get route
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME             HOST/PORT                                                      PATH   SERVICES   PORT   TERMINATION   WILDCARD
+rhte-app-czdqj   rhte-app-96db.apps.cluster-2ce0.2ce0.sandbox1303.opentlc.com   /      rhte-app   3000                 None
+----
+
+. Use that route's hostname to validate your application on cluster 2. You should see the following:
 
 * You are on Cluster: *Cluster 2*
 * Image Tag for this application: *2.0*
-* Your project prefix: *common*
-
-== Cleanup
-
-To conserve resources on the shared cluster for the next time we run this lab please delete your federated project and remove the shared cluster from your environment:
-
-[source,sh]
-----
-oc delete project rhte-app-${GUID}
-
-kubefedctl unjoin cluster2-${GUID} --host-cluster-context cluster1-${GUID} --cluster-context cluster2-${GUID} --v=2
-----
+* Your project prefix: *_<Your GUID>_*
 
 == Wrap-up
 
@@ -1681,6 +1687,6 @@ Congratulations! You have completed this lab.
 In this lab, you:
 
 * Set up a Federated Cluster consisting of two OpenShift clusters
-* Deployed an application to two clusters using *KubeFed*
+* Deployed an application to two clusters using *Kube Federation*
 * Registered for an account on a private Quay container image registry
 * Used *OpenShift Pipelines* to build an updated container image for the application and redeploy it to both clusters using KubeFed and the Quay image registry
