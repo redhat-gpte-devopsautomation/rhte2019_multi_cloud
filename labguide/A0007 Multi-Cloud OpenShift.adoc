@@ -35,7 +35,7 @@ You will only use the second cluster as a target to deploy your application to v
 . In both windows navigate to https://bit.ly/A0007.
 . In the first window request the lab `A0007-A MultiCloud OpenShift`
 . In the second window request the lab `A0007-B MultiCloud OpenShift`
-. Each window will show you the GUID (a 4 character string). Make note of both GUIDs.
+. Each window will show you the GUID (a 5 character string). Make note of both GUIDs.
 . Each window will also show you the `ssh` command to connect to the cluster. Make note of the Sandbox number that is part of that command.
 ** For example, if GUIDGrabber shows the following command:
 +
@@ -73,7 +73,7 @@ echo ${GUID}
 export GUID2= < Your Second Cluster's GUID >
 export SANDBOX2 = < Your Second Cluster's Sandbox Number>
 # for example
-# export GUID2=r2d2
+# export GUID2=ar2d2
 # export SANDBOX2=42
 
 echo "export GUID2=${GUID2}" >>$HOME/.bashrc
@@ -303,7 +303,7 @@ I0925 10:39:26.305256   18098 join.go:873] Created secret in host cluster named:
 I0925 10:39:26.319353   18098 join.go:280] Created federated cluster resource
 ----
 
-. Once again, verify that the cluster is ready, and describe the properties of the cluster:
+. Once again, verify that the cluster is ready (this will take about 20 seconds), and describe the properties of the cluster:
 +
 [source,sh]
 ----
