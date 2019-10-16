@@ -66,6 +66,13 @@ ssh lab-user@bastion.<GUID>.sandbox<SANDBOX_NUMBER>.opentlc.com
 echo ${GUID}
 ----
 
+. Check that the following command does not return any errors. If it does let your instructor know:
++
+[source,sh]
+----
+oc api-resources
+----
+
 . Set up two environment variables for your second cluster and save them in `.bashrc`:
 +
 [source,sh]
