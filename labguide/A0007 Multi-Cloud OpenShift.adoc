@@ -1090,7 +1090,7 @@ spec:
     value: image-registry.openshift-image-registry.svc:5000/rhte-app-${GUID}/rhte-app:latest
 EOF
 ----
-. Note that the image is located in the `rhte-app-CLUSTER2_USER` project, while the PipelineResource will be created in the `rhte-pipeline` project.
+. Note that the image is located in the `rhte-app-$GUID` project, while the PipelineResource will be created in the `rhte-pipeline` project.
 . Create the Image Pipeline Resource:
 +
 [source,sh]
